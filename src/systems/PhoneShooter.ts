@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { EnemyManager } from '../entities/EnemyManager';
 
 interface Projectile {
   mesh: THREE.Group;
@@ -18,12 +19,22 @@ export class PhoneShooter {
   private projectiles: Projectile[] = [];
   private particles: Particle[] = [];
   private colliders: THREE.Box3[] = [];
+  private enemyManager: EnemyManager | null = null;
+  private onExplodeCallback: (() => void) | null = null;
   private readonly PROJECTILE_SPEED = 30;
   private readonly MAX_LIFETIME = 5;
   private readonly SPIN_SPEED = 10;
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
+  }
+
+  public setEnemyManager(manager: EnemyManager): void {
+    this.enemyManager = manager;
+  }
+
+  public setOnExplode(callback: () => void): void {
+    this.onExplodeCallback = callback;
   }
 
   public setColliders(colliders: THREE.Box3[]): void {
@@ -176,8 +187,13 @@ export class PhoneShooter {
       // Check for collisions
       let hit = false;
 
+      // Hit an enemy directly
+      if (this.enemyManager && this.enemyManager.checkProjectileHit(projectile.mesh.position)) {
+        hit = true;
+      }
+
       // Hit the ground
-      if (projectile.mesh.position.y <= 0.1) {
+      if (!hit && projectile.mesh.position.y <= 0.1) {
         hit = true;
       }
 
@@ -264,6 +280,15 @@ export class PhoneShooter {
   }
 
   private explode(position: THREE.Vector3): void {
+    // Check for enemies in blast radius
+    if (this.enemyManager) {
+      this.enemyManager.checkExplosionHits(position);
+    }
+
+    if (this.onExplodeCallback) {
+      this.onExplodeCallback();
+    }
+
     const particleCount = 24;
 
     for (let i = 0; i < particleCount; i++) {

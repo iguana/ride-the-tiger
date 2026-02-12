@@ -119,6 +119,19 @@
         font-weight: bold;
         border-left: 4px solid #4ade80;
       }
+      #kill-count {
+        position: absolute;
+        top: 70px;
+        right: 20px;
+        background: rgba(0, 0, 0, 0.7);
+        color: #ff6b6b;
+        padding: 10px 18px;
+        border-radius: 8px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-size: 1rem;
+        font-weight: bold;
+        border-left: 4px solid #ff6b6b;
+      }
       #crosshair {
         position: absolute;
         top: 50%;
@@ -170,14 +183,15 @@
   <body>
     <div id="game-container"></div>
     <div id="start-screen">
-      <img src="/ride.png" alt="Ride The Tiger" class="hero-image" />
       <h1>RIDE THE TIGER</h1>
       <p>Navigate the corporate jungle</p>
       <div class="instructions">
         <strong>Controls:</strong><br>
         WASD - Move<br>
         Mouse - Look around<br>
+        Click - Throw phone<br>
         Shift - Sprint<br>
+        M - Toggle music<br>
         ESC - Release cursor
       </div>
       <div class="click-prompt">Click anywhere to start</div>
@@ -188,6 +202,7 @@
         <p id="objective-text">Loading...</p>
       </div>
       <div id="progress"></div>
+      <div id="kill-count">Managers fired: 0</div>
       <div id="crosshair"></div>
       <div id="mission-complete">
         <h2>CHECKED IN!</h2>

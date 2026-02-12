@@ -2,25 +2,30 @@ import * as THREE from 'three';
 import { GameScene } from './core/Scene';
 import { FirstPersonCamera } from './core/Camera';
 import { Tiger } from './entities/Tiger';
+import { EnemyManager } from './entities/EnemyManager';
 import { CallCenter } from './environment/CallCenter';
 import { MissionManager } from './systems/MissionManager';
 import { SimplePhysics } from './systems/Physics';
 import { PhoneShooter } from './systems/PhoneShooter';
 import { HUD } from './ui/HUD';
+import { AudioManager } from './systems/AudioManager';
 
 export class Game {
   private scene: GameScene;
   private camera: FirstPersonCamera;
   private tiger: Tiger;
+  private enemyManager: EnemyManager;
   private callCenter: CallCenter;
   private missionManager: MissionManager;
   private physics: SimplePhysics;
   private phoneShooter: PhoneShooter;
   private hud: HUD;
+  private audio: AudioManager;
 
   private clock: THREE.Clock;
   private elapsedTime: number = 0;
   private isRunning: boolean = false;
+  private footstepTimer: number = 0;
 
   private startScreen: HTMLElement;
   private container: HTMLElement;
@@ -39,8 +44,20 @@ export class Game {
     this.callCenter = new CallCenter();
     this.physics = new SimplePhysics();
     this.phoneShooter = new PhoneShooter(this.scene.scene);
+    this.enemyManager = new EnemyManager(this.scene.scene);
     this.missionManager = new MissionManager();
     this.hud = new HUD();
+    this.audio = new AudioManager();
+
+    // Connect enemy manager to phone shooter
+    this.phoneShooter.setEnemyManager(this.enemyManager);
+    this.phoneShooter.setOnExplode(() => {
+      this.audio.playExplode();
+    });
+    this.enemyManager.setOnKill((count) => {
+      this.hud.updateKillCount(count);
+      this.audio.playEnemyDeath();
+    });
 
     this.setup();
   }
@@ -54,6 +71,7 @@ export class Game {
     const colliders = this.callCenter.getColliders();
     this.physics.setColliders(colliders);
     this.phoneShooter.setColliders(colliders);
+    this.enemyManager.setColliders(colliders);
 
     // Position tiger at center spawn
     this.tiger.setPosition(0, 0, 10);
@@ -72,6 +90,7 @@ export class Game {
     // Setup mission callbacks
     this.missionManager.setOnMissionComplete((mission) => {
       this.hud.showMissionComplete(mission);
+      this.audio.playMissionComplete();
 
       // Update progress
       const progress = this.missionManager.getProgress();
@@ -102,6 +121,15 @@ export class Game {
       }
     });
 
+    // M key toggles music
+    let musicMuted = false;
+    document.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyM') {
+        musicMuted = !musicMuted;
+        this.audio.setMusicVolume(musicMuted ? 0 : 0.3);
+      }
+    });
+
     // Start render loop (but game logic paused until started)
     this.animate();
   }
@@ -110,6 +138,7 @@ export class Game {
     const origin = this.camera.camera.position.clone();
     const direction = this.camera.getDirection();
     this.phoneShooter.shoot(origin, direction);
+    this.audio.playShoot();
   }
 
   private start(): void {
@@ -121,6 +150,9 @@ export class Game {
     this.hud.updateObjective(activeMission);
     const progress = this.missionManager.getProgress();
     this.hud.updateProgress(progress.completed, progress.total);
+
+    // Init audio on first user gesture
+    this.audio.init();
 
     this.isRunning = true;
     this.container.requestPointerLock();
@@ -173,11 +205,28 @@ export class Game {
       );
     }
 
+    // Footstep sounds
+    const vel = this.tiger.getVelocity();
+    const speed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+    if (speed > 0.5) {
+      const stepInterval = speed > 7 ? 0.25 : 0.38;
+      this.footstepTimer += deltaTime;
+      if (this.footstepTimer >= stepInterval) {
+        this.footstepTimer = 0;
+        this.audio.playFootstep();
+      }
+    } else {
+      this.footstepTimer = 0;
+    }
+
     // Update mission progress
     this.missionManager.update(this.tiger.getPosition());
 
     // Update projectiles
     this.phoneShooter.update(deltaTime);
+
+    // Update enemies
+    this.enemyManager.update(deltaTime, this.tiger.getPosition());
   }
 
   private render(): void {

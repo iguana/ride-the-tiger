@@ -5,12 +5,14 @@ export class HUD {
   private objectiveText: HTMLElement;
   private missionCompleteElement: HTMLElement;
   private progressElement: HTMLElement;
+  private killCountElement: HTMLElement;
 
   constructor() {
     this.hudElement = document.getElementById('hud')!;
     this.objectiveText = document.getElementById('objective-text')!;
     this.missionCompleteElement = document.getElementById('mission-complete')!;
     this.progressElement = document.getElementById('progress')!;
+    this.killCountElement = document.getElementById('kill-count')!;
   }
 
   public show(): void {
@@ -47,6 +49,15 @@ export class HUD {
     setTimeout(() => {
       this.missionCompleteElement.style.display = 'none';
     }, 3000);
+  }
+
+  public updateKillCount(count: number): void {
+    this.killCountElement.textContent = `Managers fired: ${count}`;
+    // Brief flash effect on kill
+    this.killCountElement.style.color = '#ffffff';
+    setTimeout(() => {
+      this.killCountElement.style.color = '#ff6b6b';
+    }, 150);
   }
 
   public showAllComplete(): void {

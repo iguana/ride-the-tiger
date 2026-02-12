@@ -16,7 +16,7 @@ export class Tiger {
   private readonly DECELERATION = 10;
 
   // Jump settings
-  private readonly JUMP_FORCE = 8;
+  private readonly JUMP_FORCE = 12;
   private readonly GRAVITY = 20;
 
   private velocity: THREE.Vector3 = new THREE.Vector3();
