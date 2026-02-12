@@ -9,6 +9,7 @@ import { SimplePhysics } from './systems/Physics';
 import { PhoneShooter } from './systems/PhoneShooter';
 import { HUD } from './ui/HUD';
 import { AudioManager } from './systems/AudioManager';
+import { getLevelByIndex, getLevel, type LevelDefinition } from './levels';
 
 export class Game {
   private scene: GameScene;
@@ -21,6 +22,7 @@ export class Game {
   private phoneShooter: PhoneShooter;
   private hud: HUD;
   private audio: AudioManager;
+  private level: LevelDefinition;
 
   private clock: THREE.Clock;
   private elapsedTime: number = 0;
@@ -30,6 +32,10 @@ export class Game {
   // Pre-allocated scratch vectors to avoid per-frame allocation
   private readonly _prevPos = new THREE.Vector3();
   private readonly _movement = new THREE.Vector3();
+  private readonly _warpDelta = new THREE.Vector3();
+
+  private warpDoors: { position: THREE.Vector3; targetLevelId: string }[] = [];
+  private warpCooldown: number = 0;
 
   private startScreen: HTMLElement;
   private container: HTMLElement;
@@ -43,9 +49,12 @@ export class Game {
     this.camera = new FirstPersonCamera();
     this.clock = new THREE.Clock();
 
+    // Load level (default to level 1)
+    this.level = getLevelByIndex(0);
+
     // Initialize entities and environment
     this.tiger = new Tiger(this.camera);
-    this.callCenter = new CallCenter();
+    this.callCenter = new CallCenter(this.level);
     this.physics = new SimplePhysics();
     this.phoneShooter = new PhoneShooter(this.scene.scene);
     this.enemyManager = new EnemyManager(this.scene.scene);
@@ -77,8 +86,11 @@ export class Game {
     this.phoneShooter.setColliders(colliders);
     this.enemyManager.setColliders(colliders);
 
-    // Position tiger at center spawn
-    this.tiger.setPosition(0, 0, 10);
+    // Load spawn zones from level definition
+    this.enemyManager.setSpawnZones(this.level.spawnZones);
+
+    // Position tiger at level-defined spawn
+    this.tiger.setPosition(...this.level.playerSpawn);
 
     // Setup camera pointer lock
     this.camera.setupPointerLock(
@@ -133,6 +145,9 @@ export class Game {
         this.audio.setMusicVolume(musicMuted ? 0 : 0.3);
       }
     });
+
+    // Cache warp door positions
+    this.warpDoors = this.callCenter.getWarpDoors();
 
     // Start render loop (but game logic paused until started)
     this.animate();
@@ -231,6 +246,61 @@ export class Game {
 
     // Update enemies
     this.enemyManager.update(deltaTime, this.tiger.getPosition());
+
+    // Check warp door proximity
+    if (this.warpCooldown > 0) {
+      this.warpCooldown -= deltaTime;
+    } else {
+      const playerPos = this.tiger.getPosition();
+      for (const door of this.warpDoors) {
+        this._warpDelta.copy(playerPos).sub(door.position);
+        this._warpDelta.y = 0;
+        if (this._warpDelta.length() < 3) {
+          this.loadLevel(door.targetLevelId);
+          break;
+        }
+      }
+    }
+  }
+
+  private loadLevel(levelId: string): void {
+    const newLevel = getLevel(levelId);
+    if (!newLevel) return;
+
+    // Teardown current level
+    this.scene.scene.remove(this.callCenter.group);
+    this.enemyManager.clear();
+    this.phoneShooter.clear();
+
+    // Build new level
+    this.level = newLevel;
+    this.callCenter = new CallCenter(this.level);
+    this.scene.add(this.callCenter.group);
+
+    // Re-register colliders
+    const colliders = this.callCenter.getColliders();
+    this.physics.setColliders(colliders);
+    this.phoneShooter.setColliders(colliders);
+    this.enemyManager.setColliders(colliders);
+
+    // Load spawn zones and departments
+    this.enemyManager.setSpawnZones(this.level.spawnZones);
+    const departments = this.callCenter.getDepartments();
+    this.missionManager.loadDepartments(departments);
+
+    // Reset mission UI
+    const activeMission = this.missionManager.getActiveMission();
+    this.hud.updateObjective(activeMission);
+    const progress = this.missionManager.getProgress();
+    this.hud.updateProgress(progress.completed, progress.total);
+    this.hud.updateKillCount(0);
+
+    // Reposition player at new spawn
+    this.tiger.setPosition(...this.level.playerSpawn);
+
+    // Cache new warp doors
+    this.warpDoors = this.callCenter.getWarpDoors();
+    this.warpCooldown = 1.0;
   }
 
   private render(): void {

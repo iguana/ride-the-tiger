@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { SpawnZoneDef } from '../levels/LevelDefinition';
 
 type EnemyType = 'manager' | 'salesBro' | 'itZombie' | 'hrEnforcer' | 'financeGoblin' | 'executive';
 
@@ -92,63 +93,19 @@ export class EnemyManager {
   private readonly _testPos = new THREE.Vector3();
   private elapsedTime: number = 0;
 
-  // Spawn zones mapped to department clusters with relevant enemy types
-  private readonly SPAWN_ZONES: SpawnZone[] = [
-    // North wing — engineering/product/CTO
-    { position: new THREE.Vector3(-13, 0, -45), types: ['itZombie', 'itZombie', 'manager'] },
-    { position: new THREE.Vector3(13, 0, -45),  types: ['manager', 'itZombie'] },
-    { position: new THREE.Vector3(40, 0, -45),  types: ['executive', 'manager'] },
-    { position: new THREE.Vector3(-40, 0, -45), types: ['hrEnforcer', 'hrEnforcer', 'manager'] },
-
-    // Upper middle — security/data/warroom/exec
-    { position: new THREE.Vector3(-40, 0, -20), types: ['itZombie', 'manager'] },
-    { position: new THREE.Vector3(-13, 0, -20), types: ['itZombie', 'itZombie'] },
-    { position: new THREE.Vector3(13, 0, -20),  types: ['executive', 'executive', 'manager'] },
-    { position: new THREE.Vector3(40, 0, -20),  types: ['executive', 'executive'] },
-
-    // Center — IT/breakroom/GTM
-    { position: new THREE.Vector3(-40, 0, 5),   types: ['itZombie', 'itZombie', 'itZombie'] },
-    { position: new THREE.Vector3(0, 0, -5),    types: ['manager', 'salesBro'] },
-    { position: new THREE.Vector3(40, 0, 5),    types: ['salesBro', 'salesBro', 'manager'] },
-
-    // Lower middle — marketing/delivery/people/revops
-    { position: new THREE.Vector3(-40, 0, 30),  types: ['salesBro', 'salesBro', 'manager'] },
-    { position: new THREE.Vector3(-13, 0, 30),  types: ['manager', 'manager'] },
-    { position: new THREE.Vector3(13, 0, 30),   types: ['hrEnforcer', 'hrEnforcer', 'manager'] },
-    { position: new THREE.Vector3(40, 0, 30),   types: ['financeGoblin', 'financeGoblin', 'manager'] },
-
-    // South wing — support/finance
-    { position: new THREE.Vector3(-25, 0, 50),  types: ['hrEnforcer', 'hrEnforcer'] },
-    { position: new THREE.Vector3(25, 0, 50),   types: ['financeGoblin', 'financeGoblin'] },
-
-    // Outside — VC
-    { position: new THREE.Vector3(0, 0, -75),   types: ['financeGoblin', 'financeGoblin', 'executive'] },
-
-    // Hallway roamers
-    { position: new THREE.Vector3(0, 0, -30),   types: ['manager', 'salesBro'] },
-    { position: new THREE.Vector3(0, 0, 15),    types: ['manager', 'hrEnforcer'] },
-    { position: new THREE.Vector3(-25, 0, 10),  types: ['itZombie', 'manager'] },
-    { position: new THREE.Vector3(25, 0, 10),   types: ['salesBro', 'manager'] },
-
-    // East outdoor — Parking Garage + Server Farm
-    { position: new THREE.Vector3(75, 0, 0),    types: ['manager', 'salesBro', 'manager'] },
-    { position: new THREE.Vector3(85, 0, -5),   types: ['salesBro', 'manager'] },
-    { position: new THREE.Vector3(110, 0, 0),   types: ['itZombie', 'itZombie', 'itZombie'] },
-
-    // West outdoor — Startup Graveyard + Food Trucks
-    { position: new THREE.Vector3(-80, 0, 0),   types: ['financeGoblin', 'executive', 'financeGoblin'] },
-    { position: new THREE.Vector3(-80, 0, -10), types: ['executive', 'financeGoblin'] },
-    { position: new THREE.Vector3(-80, 0, 30),  types: ['salesBro', 'manager', 'salesBro'] },
-
-    // North outdoor — Executive Helipad
-    { position: new THREE.Vector3(0, 0, -105),  types: ['executive', 'executive', 'executive'] },
-    { position: new THREE.Vector3(-5, 0, -95),  types: ['executive', 'financeGoblin'] },
-  ];
+  private spawnZones: SpawnZone[] = [];
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
+  }
 
-    // Spawn initial batch
+  public setSpawnZones(zones: SpawnZoneDef[]): void {
+    this.spawnZones = zones.map(z => ({
+      position: new THREE.Vector3(...z.position),
+      types: z.types as EnemyType[],
+    }));
+
+    // Spawn initial batch now that zones are loaded
     for (let i = 0; i < 10; i++) {
       this.spawnEnemy();
     }
@@ -164,8 +121,9 @@ export class EnemyManager {
 
   private spawnEnemy(): void {
     if (this.enemies.length >= this.MAX_ENEMIES) return;
+    if (this.spawnZones.length === 0) return;
 
-    const zone = this.SPAWN_ZONES[Math.floor(Math.random() * this.SPAWN_ZONES.length)];
+    const zone = this.spawnZones[Math.floor(Math.random() * this.spawnZones.length)];
     const type = zone.types[Math.floor(Math.random() * zone.types.length)];
 
     const spawnPos = zone.position.clone();
@@ -840,6 +798,25 @@ export class EnemyManager {
 
   public getKillCount(): number {
     return this.killCount;
+  }
+
+  public clear(): void {
+    for (const enemy of this.enemies) {
+      this.scene.remove(enemy.mesh);
+      disposeGroup(enemy.mesh);
+    }
+    this.enemies.length = 0;
+
+    for (const p of this.deathParticles) {
+      this.scene.remove(p.mesh);
+      (p.mesh.material as THREE.Material).dispose();
+      p.mesh.geometry.dispose();
+    }
+    this.deathParticles.length = 0;
+
+    this.spawnZones.length = 0;
+    this.spawnTimer = 0;
+    this.killCount = 0;
   }
 }
 

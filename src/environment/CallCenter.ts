@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import type { LevelDefinition, OutdoorAreaType, WarpDoorDef } from '../levels/LevelDefinition';
 
 export interface Department {
   id: string;
@@ -9,60 +10,26 @@ export interface Department {
   missionDescription?: string;
 }
 
-const DEPARTMENTS: Department[] = [
-  // ── North wing ──
-  { id: 'legal', name: 'Legal', position: new THREE.Vector3(-40, 0, -45), artifactColor: 0x6b7280, missionDescription: 'Mitigate all outstanding liability vectors' },
-  { id: 'engineering', name: 'Engineering', position: new THREE.Vector3(-13, 0, -45), artifactColor: 0xffd700, missionDescription: 'Accelerate the velocity of innovation' },
-  { id: 'product', name: 'Product', position: new THREE.Vector3(13, 0, -45), artifactColor: 0x3182ce, missionDescription: 'Align the roadmap with customer value streams' },
-  { id: 'oocto', name: 'Office of the CTO', position: new THREE.Vector3(40, 0, -45), artifactColor: 0xffd700, missionDescription: 'Synergize the technical vision' },
-
-  // ── Upper middle ──
-  { id: 'security', name: 'Security', position: new THREE.Vector3(-40, 0, -20), artifactColor: 0xdc2626, missionDescription: 'Harden the zero-trust perimeter' },
-  { id: 'data', name: 'Data Science', position: new THREE.Vector3(-13, 0, -20), artifactColor: 0x7c3aed, missionDescription: 'Leverage predictive analytics for actionable insights' },
-  { id: 'warroom', name: 'The War Room', position: new THREE.Vector3(13, 0, -20), artifactColor: 0xb91c1c, missionDescription: 'Facilitate cross-functional strategic alignment' },
-  { id: 'executive', name: 'Executive Suite', position: new THREE.Vector3(40, 0, -20), artifactColor: 0x1e3a5f, missionDescription: 'Interface with C-suite stakeholders' },
-
-  // ── Center row ──
-  { id: 'it', name: 'IT', position: new THREE.Vector3(-40, 0, 5), artifactColor: 0x2d3748, missionDescription: 'Optimize the digital infrastructure paradigm' },
-  { id: 'breakroom', name: 'Break Room', position: new THREE.Vector3(0, 0, -5), artifactColor: 0xf59e0b, missionDescription: 'Recharge your human capital batteries' },
-  // center (0,0,10) is spawn atrium
-  { id: 'gtm', name: 'Go To Market', position: new THREE.Vector3(40, 0, 5), artifactColor: 0xff6b35, missionDescription: 'Maximize pipeline conversion velocity' },
-
-  // ── Lower middle ──
-  { id: 'marketing', name: 'Marketing', position: new THREE.Vector3(-40, 0, 30), artifactColor: 0xe91e63, missionDescription: 'Amplify brand awareness touchpoints' },
-  { id: 'delivery', name: 'Delivery', position: new THREE.Vector3(-13, 0, 30), artifactColor: 0x8b6914, missionDescription: 'Ship value to stakeholders on cadence' },
-  { id: 'people', name: 'People', position: new THREE.Vector3(13, 0, 30), artifactColor: 0xe53e3e, missionDescription: 'Foster cross-functional talent synergies' },
-  { id: 'revops', name: 'Revenue Ops', position: new THREE.Vector3(40, 0, 30), artifactColor: 0x38a169, missionDescription: 'Operationalize the revenue flywheel' },
-
-  // ── South wing ──
-  { id: 'support', name: 'Support', position: new THREE.Vector3(-25, 0, 50), artifactColor: 0x718096, missionDescription: 'Deliver proactive customer success outcomes' },
-  { id: 'finance', name: 'Finance', position: new THREE.Vector3(25, 0, 50), artifactColor: 0x059669, missionDescription: 'Optimize the burn rate to runway ratio' },
-
-  // ── Outside areas ──
-  { id: 'vc', name: 'Venture Capital', position: new THREE.Vector3(0, 0, -75), artifactColor: 0x2ecc71, missionDescription: 'Secure the next funding tranche' },
-  { id: 'cancun', name: 'Cancún', position: new THREE.Vector3(0, 0, 135), artifactColor: 0x00bcd4, missionDescription: '¡Viva Los Replicantes!' },
-  { id: 'parking', name: 'Parking Garage', position: new THREE.Vector3(82, 0, 0), artifactColor: 0x6b7280, missionDescription: 'Optimize the organizational mobility fleet' },
-  { id: 'serverfarm', name: 'Server Farm', position: new THREE.Vector3(115, 0, 0), artifactColor: 0x22d3ee, missionDescription: 'Ensure five nines of uptime availability' },
-  { id: 'graveyard', name: 'Startup Graveyard', position: new THREE.Vector3(-82, 0, 0), artifactColor: 0x6b21a8, missionDescription: 'Pay respects to disrupted business models' },
-  { id: 'foodtrucks', name: 'Food Truck Court', position: new THREE.Vector3(-82, 0, 30), artifactColor: 0xf97316, missionDescription: 'Refuel the human capital engine' },
-  { id: 'helipad', name: 'Executive Helipad', position: new THREE.Vector3(0, 0, -105), artifactColor: 0x0ea5e9, missionDescription: 'Secure the golden parachute extraction' },
-];
-
 export class CallCenter {
   public group: THREE.Group;
   public colliders: THREE.Box3[] = [];
 
-  private readonly FLOOR_SIZE = 120;
+  private readonly FLOOR_SIZE: number;
   private readonly CUBICLE_HEIGHT = 1.5;
 
   private animatedObjects: { mesh: THREE.Object3D; type: string }[] = [];
+  private level: LevelDefinition;
+  private warpDoors: { position: THREE.Vector3; targetLevelId: string }[] = [];
 
-  constructor() {
+  constructor(level: LevelDefinition) {
+    this.level = level;
+    this.FLOOR_SIZE = level.floorSize;
     this.group = new THREE.Group();
     this.createFloor();
     this.createCeiling();
     this.createWalls();
     this.createDepartments();
+    this.createWarpDoors();
   }
 
   // --- Floor, ceiling, walls (kept from original) ---
@@ -70,7 +37,7 @@ export class CallCenter {
   private createFloor(): void {
     const floorGeometry = new THREE.PlaneGeometry(this.FLOOR_SIZE, this.FLOOR_SIZE);
     const floorMaterial = new THREE.MeshStandardMaterial({
-      color: 0x4a5568,
+      color: this.level.theme.floorColor,
       roughness: 0.9,
       metalness: 0.1,
     });
@@ -89,7 +56,7 @@ export class CallCenter {
   private createCeiling(): void {
     const ceilingGeometry = new THREE.PlaneGeometry(this.FLOOR_SIZE, this.FLOOR_SIZE);
     const ceilingMaterial = new THREE.MeshStandardMaterial({
-      color: 0xf5f5f5,
+      color: this.level.theme.ceilingColor,
       roughness: 1,
       metalness: 0,
     });
@@ -124,7 +91,7 @@ export class CallCenter {
   }
 
   private createWalls(): void {
-    const wallMaterial = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.9 });
+    const wallMaterial = new THREE.MeshStandardMaterial({ color: this.level.theme.wallColor, roughness: 0.9 });
     const halfSize = this.FLOOR_SIZE / 2;
     const wallHeight = 6;
     const doorWidth = 6;
@@ -269,14 +236,27 @@ export class CallCenter {
       new THREE.Vector3(0.5, wallHeight, westSegmentLength)
     ));
 
-    // --- Outdoor areas ---
-    this.createVCPatio();
-    this.createCancunBeach();
-    this.createParkingGarage();
-    this.createServerFarm();
-    this.createStartupGraveyard();
-    this.createFoodTruckCourt();
-    this.createHelipad();
+    // --- Outdoor areas (dispatched from level definition) ---
+    for (const area of this.level.outdoorAreas) {
+      this.buildOutdoorArea(area.type);
+    }
+  }
+
+  private buildOutdoorArea(type: OutdoorAreaType): void {
+    const builders: Record<OutdoorAreaType, () => void> = {
+      vcPatio: () => this.createVCPatio(),
+      cancunBeach: () => this.createCancunBeach(),
+      parkingGarage: () => this.createParkingGarage(),
+      serverFarm: () => this.createServerFarm(),
+      startupGraveyard: () => this.createStartupGraveyard(),
+      foodTruckCourt: () => this.createFoodTruckCourt(),
+      helipad: () => this.createHelipad(),
+      rooftopTerrace: () => this.createRooftopTerrace(),
+      zenGarden: () => this.createZenGarden(),
+      basketballCourt: () => this.createBasketballCourt(),
+      foodTruckRally: () => this.createFoodTruckRally(),
+    };
+    builders[type]();
   }
 
   private createWall(width: number, height: number, material: THREE.Material): THREE.Mesh {
@@ -1697,7 +1677,14 @@ export class CallCenter {
   // --- Department zone generation ---
 
   private createDepartments(): void {
-    for (const dept of DEPARTMENTS) {
+    for (const def of this.level.departments) {
+      const dept: Department = {
+        id: def.id,
+        name: def.name,
+        position: new THREE.Vector3(...def.position),
+        artifactColor: def.artifactColor,
+        missionDescription: def.missionDescription,
+      };
       this.createDepartmentZone(dept);
     }
   }
@@ -2973,6 +2960,517 @@ export class CallCenter {
     return g;
   }
 
+  // ── Level 2 outdoor area builders ──────────────────────────────────
+
+  private createRooftopTerrace(): void {
+    const halfSize = this.FLOOR_SIZE / 2;
+    const terraceWidth = 24;
+    const terraceDepth = 20;
+
+    // Wooden deck floor
+    const deck = new THREE.Mesh(
+      new THREE.PlaneGeometry(terraceWidth, terraceDepth),
+      new THREE.MeshStandardMaterial({ color: 0x8b6914, roughness: 0.85 })
+    );
+    deck.rotation.x = -Math.PI / 2;
+    deck.position.set(0, 0.005, -halfSize - terraceDepth / 2);
+    deck.receiveShadow = true;
+    this.group.add(deck);
+
+    // Walkway
+    const walkway = new THREE.Mesh(
+      new THREE.PlaneGeometry(6, terraceDepth),
+      new THREE.MeshStandardMaterial({ color: 0x9ca3af, roughness: 0.7 })
+    );
+    walkway.rotation.x = -Math.PI / 2;
+    walkway.position.set(0, 0.008, -halfSize - terraceDepth / 2);
+    walkway.receiveShadow = true;
+    this.group.add(walkway);
+
+    // Glass railing around terrace
+    const railingMat = new THREE.MeshStandardMaterial({
+      color: 0xadd8e6,
+      transparent: true,
+      opacity: 0.3,
+      roughness: 0.1,
+      metalness: 0.9,
+    });
+    const railHeight = 1.2;
+
+    // Back rail
+    const backRail = new THREE.Mesh(new THREE.BoxGeometry(terraceWidth, railHeight, 0.1), railingMat);
+    backRail.position.set(0, railHeight / 2, -halfSize - terraceDepth);
+    this.group.add(backRail);
+    this.colliders.push(new THREE.Box3().setFromCenterAndSize(
+      backRail.position.clone(), new THREE.Vector3(terraceWidth, railHeight, 0.5)
+    ));
+
+    // Side rails
+    for (const side of [-1, 1]) {
+      const sideRail = new THREE.Mesh(new THREE.BoxGeometry(0.1, railHeight, terraceDepth), railingMat);
+      sideRail.position.set(side * terraceWidth / 2, railHeight / 2, -halfSize - terraceDepth / 2);
+      this.group.add(sideRail);
+      this.colliders.push(new THREE.Box3().setFromCenterAndSize(
+        sideRail.position.clone(), new THREE.Vector3(0.5, railHeight, terraceDepth)
+      ));
+    }
+
+    // Lounge furniture — low couches
+    const couchMat = new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 0.8 });
+    const couchPositions = [
+      { x: -8, z: -halfSize - 6 },
+      { x: 8, z: -halfSize - 6 },
+      { x: -8, z: -halfSize - 14 },
+      { x: 8, z: -halfSize - 14 },
+    ];
+    for (const cp of couchPositions) {
+      const couch = new THREE.Mesh(new THREE.BoxGeometry(4, 0.5, 1.5), couchMat);
+      couch.position.set(cp.x, 0.25, cp.z);
+      this.group.add(couch);
+      // Couch back
+      const back = new THREE.Mesh(new THREE.BoxGeometry(4, 0.6, 0.2), couchMat);
+      back.position.set(cp.x, 0.55, cp.z - 0.65);
+      this.group.add(back);
+    }
+
+    // String lights
+    const bulbMat = new THREE.MeshStandardMaterial({
+      color: 0xfbbf24, emissive: 0xfbbf24, emissiveIntensity: 0.6,
+    });
+    for (let i = 0; i < 12; i++) {
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 6), bulbMat);
+      bulb.position.set(
+        -terraceWidth / 2 + 2 + i * (terraceWidth - 4) / 11,
+        3.5,
+        -halfSize - terraceDepth / 2
+      );
+      this.group.add(bulb);
+    }
+
+    // Ambient light
+    const terracLight = new THREE.PointLight(0xfbbf24, 0.5, 25);
+    terracLight.position.set(0, 4, -halfSize - terraceDepth / 2);
+    this.group.add(terracLight);
+  }
+
+  private createZenGarden(): void {
+    const halfSize = this.FLOOR_SIZE / 2;
+    const gardenWidth = 25;
+    const gardenDepth = 22;
+    const startX = -(halfSize + gardenWidth);
+
+    // Sand floor
+    const sand = new THREE.Mesh(
+      new THREE.PlaneGeometry(gardenWidth, gardenDepth),
+      new THREE.MeshStandardMaterial({ color: 0xd4c5a9, roughness: 1.0 })
+    );
+    sand.rotation.x = -Math.PI / 2;
+    sand.position.set(startX + gardenWidth / 2, 0.005, 0);
+    sand.receiveShadow = true;
+    this.group.add(sand);
+
+    // Walkway from door
+    const walkway = new THREE.Mesh(
+      new THREE.PlaneGeometry(gardenWidth, 6),
+      new THREE.MeshStandardMaterial({ color: 0x9ca3af, roughness: 0.7 })
+    );
+    walkway.rotation.x = -Math.PI / 2;
+    walkway.position.set(startX + gardenWidth / 2, 0.008, 0);
+    walkway.receiveShadow = true;
+    this.group.add(walkway);
+
+    // Zen sand pattern (concentric circle lines)
+    const sandLineMat = new THREE.MeshStandardMaterial({ color: 0xc4b393, roughness: 1.0 });
+    for (let r = 3; r <= 8; r += 1.5) {
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(r - 0.05, r + 0.05, 32),
+        sandLineMat
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(startX + gardenWidth / 2, 0.01, 0);
+      this.group.add(ring);
+    }
+
+    // Bonsai trees (small green cones on brown cylinders)
+    const treeTrunkMat = new THREE.MeshStandardMaterial({ color: 0x5d4037, roughness: 0.9 });
+    const treeLeafMat = new THREE.MeshStandardMaterial({ color: 0x2e7d32, roughness: 0.8 });
+    const treePositions = [
+      { x: startX + 5, z: -6 },
+      { x: startX + gardenWidth - 5, z: 6 },
+      { x: startX + gardenWidth / 2, z: -8 },
+    ];
+    for (const tp of treePositions) {
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 1, 8), treeTrunkMat);
+      trunk.position.set(tp.x, 0.5, tp.z);
+      this.group.add(trunk);
+      const canopy = new THREE.Mesh(new THREE.SphereGeometry(0.8, 8, 6), treeLeafMat);
+      canopy.position.set(tp.x, 1.3, tp.z);
+      canopy.scale.y = 0.6;
+      this.group.add(canopy);
+    }
+
+    // Stepping stones
+    const stoneMat = new THREE.MeshStandardMaterial({ color: 0x78909c, roughness: 0.7 });
+    for (let i = 0; i < 5; i++) {
+      const stone = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.1, 8), stoneMat);
+      stone.position.set(startX + 3 + i * 5, 0.05, 2 * Math.sin(i * 1.2));
+      this.group.add(stone);
+    }
+
+    // Bamboo fence border
+    const fenceMat = new THREE.MeshStandardMaterial({ color: 0x8d6e63, roughness: 0.7 });
+    const fenceHeight = 1.5;
+    // Back
+    const backFence = new THREE.Mesh(new THREE.BoxGeometry(gardenWidth, fenceHeight, 0.15), fenceMat);
+    backFence.position.set(startX + gardenWidth / 2, fenceHeight / 2, -gardenDepth / 2);
+    this.group.add(backFence);
+    this.colliders.push(new THREE.Box3().setFromCenterAndSize(
+      backFence.position.clone(), new THREE.Vector3(gardenWidth, fenceHeight, 0.5)
+    ));
+    // Front
+    const frontFence = new THREE.Mesh(new THREE.BoxGeometry(gardenWidth, fenceHeight, 0.15), fenceMat);
+    frontFence.position.set(startX + gardenWidth / 2, fenceHeight / 2, gardenDepth / 2);
+    this.group.add(frontFence);
+    this.colliders.push(new THREE.Box3().setFromCenterAndSize(
+      frontFence.position.clone(), new THREE.Vector3(gardenWidth, fenceHeight, 0.5)
+    ));
+    // Outer side
+    const outerFence = new THREE.Mesh(new THREE.BoxGeometry(0.15, fenceHeight, gardenDepth), fenceMat);
+    outerFence.position.set(startX, fenceHeight / 2, 0);
+    this.group.add(outerFence);
+    this.colliders.push(new THREE.Box3().setFromCenterAndSize(
+      outerFence.position.clone(), new THREE.Vector3(0.5, fenceHeight, gardenDepth)
+    ));
+  }
+
+  private createBasketballCourt(): void {
+    const halfSize = this.FLOOR_SIZE / 2;
+    const courtWidth = 25;
+    const courtDepth = 20;
+    const startX = halfSize;
+
+    // Court floor
+    const courtFloor = new THREE.Mesh(
+      new THREE.PlaneGeometry(courtWidth, courtDepth),
+      new THREE.MeshStandardMaterial({ color: 0xc06000, roughness: 0.6 })
+    );
+    courtFloor.rotation.x = -Math.PI / 2;
+    courtFloor.position.set(startX + courtWidth / 2, 0.005, 0);
+    courtFloor.receiveShadow = true;
+    this.group.add(courtFloor);
+
+    // Walkway from door
+    const walkway = new THREE.Mesh(
+      new THREE.PlaneGeometry(courtWidth, 6),
+      new THREE.MeshStandardMaterial({ color: 0x9ca3af, roughness: 0.7 })
+    );
+    walkway.rotation.x = -Math.PI / 2;
+    walkway.position.set(startX + courtWidth / 2, 0.008, 0);
+    walkway.receiveShadow = true;
+    this.group.add(walkway);
+
+    // Court lines (center circle and boundaries)
+    const lineMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+
+    // Center circle
+    const centerCircle = new THREE.Mesh(new THREE.RingGeometry(2.8, 3, 32), lineMat);
+    centerCircle.rotation.x = -Math.PI / 2;
+    centerCircle.position.set(startX + courtWidth / 2, 0.01, 0);
+    this.group.add(centerCircle);
+
+    // Half-court line
+    const halfLine = new THREE.Mesh(new THREE.PlaneGeometry(0.1, courtDepth - 2), lineMat);
+    halfLine.rotation.x = -Math.PI / 2;
+    halfLine.position.set(startX + courtWidth / 2, 0.01, 0);
+    this.group.add(halfLine);
+
+    // Boundary lines
+    const boundaryLine = new THREE.Mesh(new THREE.PlaneGeometry(courtWidth - 2, 0.1), lineMat);
+    boundaryLine.rotation.x = -Math.PI / 2;
+    for (const zOff of [-courtDepth / 2 + 1, courtDepth / 2 - 1]) {
+      const bl = boundaryLine.clone();
+      bl.position.set(startX + courtWidth / 2, 0.01, zOff);
+      this.group.add(bl);
+    }
+
+    // Hoops (poles + backboards + rims)
+    const poleMat = new THREE.MeshStandardMaterial({ color: 0x9e9e9e, metalness: 0.8 });
+    const backboardMat = new THREE.MeshStandardMaterial({
+      color: 0xffffff, transparent: true, opacity: 0.5,
+    });
+    const rimMat = new THREE.MeshStandardMaterial({ color: 0xff5722, metalness: 0.7 });
+
+    for (const xOff of [startX + 3, startX + courtWidth - 3]) {
+      // Pole
+      const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 3.5, 8), poleMat);
+      pole.position.set(xOff, 1.75, 0);
+      this.group.add(pole);
+      // Backboard
+      const backboard = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1, 1.5), backboardMat);
+      backboard.position.set(xOff, 3.2, 0);
+      this.group.add(backboard);
+      // Rim
+      const rim = new THREE.Mesh(new THREE.TorusGeometry(0.23, 0.02, 8, 16), rimMat);
+      rim.position.set(xOff + (xOff < startX + courtWidth / 2 ? 0.3 : -0.3), 3.0, 0);
+      rim.rotation.x = Math.PI / 2;
+      this.group.add(rim);
+    }
+
+    // Chain-link fence border
+    const fenceMat = new THREE.MeshStandardMaterial({
+      color: 0x9e9e9e, transparent: true, opacity: 0.4, metalness: 0.9,
+    });
+    const fenceHeight = 3;
+    // Back
+    const backFence = new THREE.Mesh(new THREE.PlaneGeometry(courtWidth, fenceHeight), fenceMat);
+    backFence.position.set(startX + courtWidth / 2, fenceHeight / 2, -courtDepth / 2);
+    this.group.add(backFence);
+    this.colliders.push(new THREE.Box3().setFromCenterAndSize(
+      backFence.position.clone(), new THREE.Vector3(courtWidth, fenceHeight, 0.5)
+    ));
+    // Front
+    const frontFence = new THREE.Mesh(new THREE.PlaneGeometry(courtWidth, fenceHeight), fenceMat);
+    frontFence.position.set(startX + courtWidth / 2, fenceHeight / 2, courtDepth / 2);
+    frontFence.rotation.y = Math.PI;
+    this.group.add(frontFence);
+    this.colliders.push(new THREE.Box3().setFromCenterAndSize(
+      frontFence.position.clone(), new THREE.Vector3(courtWidth, fenceHeight, 0.5)
+    ));
+    // Outer side
+    const outerFence = new THREE.Mesh(new THREE.PlaneGeometry(courtDepth, fenceHeight), fenceMat);
+    outerFence.position.set(startX + courtWidth, fenceHeight / 2, 0);
+    outerFence.rotation.y = -Math.PI / 2;
+    this.group.add(outerFence);
+    this.colliders.push(new THREE.Box3().setFromCenterAndSize(
+      outerFence.position.clone(), new THREE.Vector3(0.5, fenceHeight, courtDepth)
+    ));
+  }
+
+  private createFoodTruckRally(): void {
+    const halfSize = this.FLOOR_SIZE / 2;
+    const rallyWidth = 28;
+    const rallyDepth = 22;
+
+    // Asphalt floor
+    const asphalt = new THREE.Mesh(
+      new THREE.PlaneGeometry(rallyWidth, rallyDepth),
+      new THREE.MeshStandardMaterial({ color: 0x4a4a4a, roughness: 0.95 })
+    );
+    asphalt.rotation.x = -Math.PI / 2;
+    asphalt.position.set(0, 0.005, halfSize + rallyDepth / 2);
+    asphalt.receiveShadow = true;
+    this.group.add(asphalt);
+
+    // Walkway from door
+    const walkway = new THREE.Mesh(
+      new THREE.PlaneGeometry(6, rallyDepth),
+      new THREE.MeshStandardMaterial({ color: 0x9ca3af, roughness: 0.7 })
+    );
+    walkway.rotation.x = -Math.PI / 2;
+    walkway.position.set(0, 0.008, halfSize + rallyDepth / 2);
+    walkway.receiveShadow = true;
+    this.group.add(walkway);
+
+    // String lights (festive)
+    const bulbMat = new THREE.MeshStandardMaterial({
+      color: 0xff6b6b, emissive: 0xff6b6b, emissiveIntensity: 0.5,
+    });
+    for (let i = 0; i < 14; i++) {
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.12, 6, 6), bulbMat);
+      bulb.position.set(
+        -rallyWidth / 2 + 1 + i * (rallyWidth - 2) / 13,
+        3.5,
+        halfSize + rallyDepth / 2
+      );
+      this.group.add(bulb);
+    }
+
+    // Food trucks (reuse existing builder)
+    const truckConfigs = [
+      { color: 0xe74c3c, x: -9, z: halfSize + 7 },
+      { color: 0x3498db, x: 9, z: halfSize + 7 },
+      { color: 0x2ecc71, x: -9, z: halfSize + 16 },
+      { color: 0xf39c12, x: 9, z: halfSize + 16 },
+    ];
+    for (const tc of truckConfigs) {
+      const truck = this.createFoodTruck(tc.color);
+      truck.position.set(tc.x, 0, tc.z);
+      this.group.add(truck);
+    }
+
+    // Picnic tables
+    const tablePositions = [
+      { x: -3, z: halfSize + 10 },
+      { x: 3, z: halfSize + 10 },
+      { x: 0, z: halfSize + 14 },
+    ];
+    for (const tp of tablePositions) {
+      const table = this.createPicnicTable();
+      table.position.set(tp.x, 0, tp.z);
+      this.group.add(table);
+    }
+
+    // Boundary bollards
+    const bollardMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, roughness: 0.5 });
+    for (let i = 0; i < 8; i++) {
+      const bollard = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.8, 8), bollardMat);
+      bollard.position.set(
+        -rallyWidth / 2 + 2 + i * (rallyWidth - 4) / 7,
+        0.4,
+        halfSize + rallyDepth
+      );
+      this.group.add(bollard);
+    }
+
+    // Collider along back edge
+    this.colliders.push(new THREE.Box3().setFromCenterAndSize(
+      new THREE.Vector3(0, 0.5, halfSize + rallyDepth),
+      new THREE.Vector3(rallyWidth, 1, 0.5)
+    ));
+    // Side colliders
+    for (const side of [-1, 1]) {
+      this.colliders.push(new THREE.Box3().setFromCenterAndSize(
+        new THREE.Vector3(side * rallyWidth / 2, 0.5, halfSize + rallyDepth / 2),
+        new THREE.Vector3(0.5, 1, rallyDepth)
+      ));
+    }
+
+    // Area light
+    const rallyLight = new THREE.PointLight(0xff6b6b, 0.4, 30);
+    rallyLight.position.set(0, 5, halfSize + rallyDepth / 2);
+    this.group.add(rallyLight);
+  }
+
+  // --- Warp doors ---
+
+  private createWarpDoors(): void {
+    const doors = this.level.warpDoors;
+    if (!doors || doors.length === 0) return;
+
+    for (const def of doors) {
+      const portal = this.createWarpPortal(def);
+      portal.position.set(...def.position);
+      this.group.add(portal);
+      this.warpDoors.push({
+        position: new THREE.Vector3(...def.position),
+        targetLevelId: def.targetLevelId,
+      });
+    }
+  }
+
+  private createWarpPortal(def: WarpDoorDef): THREE.Group {
+    const portal = new THREE.Group();
+
+    const doorWidth = 2.4;
+    const doorHeight = 3.5;
+    const frameThickness = 0.2;
+
+    // Doorframe — four emissive cyan beams
+    const frameMat = new THREE.MeshStandardMaterial({
+      color: 0x00e5ff,
+      emissive: 0x00e5ff,
+      emissiveIntensity: 0.6,
+      metalness: 0.8,
+      roughness: 0.2,
+    });
+
+    // Left post
+    const leftPost = new THREE.Mesh(
+      new THREE.BoxGeometry(frameThickness, doorHeight, frameThickness),
+      frameMat
+    );
+    leftPost.position.set(-doorWidth / 2, doorHeight / 2, 0);
+    portal.add(leftPost);
+
+    // Right post
+    const rightPost = new THREE.Mesh(
+      new THREE.BoxGeometry(frameThickness, doorHeight, frameThickness),
+      frameMat
+    );
+    rightPost.position.set(doorWidth / 2, doorHeight / 2, 0);
+    portal.add(rightPost);
+
+    // Top beam
+    const topBeam = new THREE.Mesh(
+      new THREE.BoxGeometry(doorWidth + frameThickness, frameThickness, frameThickness),
+      frameMat
+    );
+    topBeam.position.set(0, doorHeight, 0);
+    portal.add(topBeam);
+
+    // Bottom beam
+    const bottomBeam = new THREE.Mesh(
+      new THREE.BoxGeometry(doorWidth + frameThickness, frameThickness, frameThickness),
+      frameMat
+    );
+    bottomBeam.position.set(0, 0, 0);
+    portal.add(bottomBeam);
+
+    // Shimmering fill surface
+    const fillMat = new THREE.MeshStandardMaterial({
+      color: 0x00bcd4,
+      emissive: 0x00e5ff,
+      emissiveIntensity: 0.4,
+      transparent: true,
+      opacity: 0.35,
+      side: THREE.DoubleSide,
+    });
+    const fill = new THREE.Mesh(
+      new THREE.PlaneGeometry(doorWidth - frameThickness * 0.5, doorHeight - frameThickness * 0.5),
+      fillMat
+    );
+    fill.position.set(0, doorHeight / 2, 0);
+    portal.add(fill);
+    this.animatedObjects.push({ mesh: fill, type: 'warpShimmer' });
+
+    // Point light for glow
+    const light = new THREE.PointLight(0x00e5ff, 2, 8);
+    light.position.set(0, doorHeight / 2, 1);
+    portal.add(light);
+
+    // Label sign above
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d')!;
+    canvas.width = 512;
+    canvas.height = 64;
+    ctx.fillStyle = '#001a1a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#00e5ff';
+    ctx.font = 'bold 32px Segoe UI, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(def.label, canvas.width / 2, canvas.height / 2);
+
+    const texture = new THREE.CanvasTexture(canvas);
+    const signMat = new THREE.MeshStandardMaterial({
+      map: texture,
+      emissive: 0x00e5ff,
+      emissiveIntensity: 0.3,
+      transparent: true,
+    });
+    const sign = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.6, 0.35),
+      signMat
+    );
+    sign.position.set(0, doorHeight + 0.4, 0);
+    portal.add(sign);
+
+    // Back-facing sign
+    const signBack = new THREE.Mesh(
+      new THREE.PlaneGeometry(2.6, 0.35),
+      signMat
+    );
+    signBack.position.set(0, doorHeight + 0.4, 0);
+    signBack.rotation.y = Math.PI;
+    portal.add(signBack);
+
+    return portal;
+  }
+
+  public getWarpDoors(): { position: THREE.Vector3; targetLevelId: string }[] {
+    return this.warpDoors;
+  }
+
   // --- Animation update (called from Game) ---
 
   public update(time: number): void {
@@ -2988,6 +3486,10 @@ export class CallCenter {
         // Gentle floating bobble
         obj.mesh.position.y = 0.4 + Math.sin(time * 2) * 0.08;
         obj.mesh.rotation.y = time * 0.3;
+      } else if (obj.type === 'warpShimmer') {
+        const mat = (obj.mesh as THREE.Mesh).material as THREE.MeshStandardMaterial;
+        mat.opacity = 0.25 + Math.sin(time * 3) * 0.1;
+        mat.emissiveIntensity = 0.3 + Math.sin(time * 2.5) * 0.2;
       }
     }
   }
@@ -2997,6 +3499,12 @@ export class CallCenter {
   }
 
   public getDepartments(): Department[] {
-    return [...DEPARTMENTS];
+    return this.level.departments.map(def => ({
+      id: def.id,
+      name: def.name,
+      position: new THREE.Vector3(...def.position),
+      artifactColor: def.artifactColor,
+      missionDescription: def.missionDescription,
+    }));
   }
 }

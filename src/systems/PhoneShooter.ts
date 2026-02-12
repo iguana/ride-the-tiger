@@ -377,4 +377,19 @@ export class PhoneShooter {
   public getProjectiles(): Projectile[] {
     return this.projectiles;
   }
+
+  public clear(): void {
+    for (const p of this.projectiles) {
+      this.scene.remove(p.mesh);
+      disposeProjectile(p.mesh);
+    }
+    this.projectiles.length = 0;
+
+    for (const p of this.particles) {
+      this.scene.remove(p.mesh);
+      (p.mesh.material as THREE.Material).dispose();
+      p.mesh.geometry.dispose();
+    }
+    this.particles.length = 0;
+  }
 }
