@@ -19,6 +19,12 @@ export class AudioManager {
   private lastSfxTime: Map<string, number> = new Map();
   private readonly SFX_COOLDOWN = 50; // ms
 
+  // Cached noise buffers (created once, reused every SFX call)
+  private shootNoiseBuffer: AudioBuffer | null = null;
+  private explodeNoiseBuffer: AudioBuffer | null = null;
+  private deathNoiseBuffer: AudioBuffer | null = null;
+  private flutterNoiseBuffers: AudioBuffer[] = [];
+
   constructor() {}
 
   /** Must be called from a user gesture (click) to unlock AudioContext */
@@ -38,7 +44,40 @@ export class AudioManager {
     this.musicGain.gain.value = 0.3;
     this.musicGain.connect(this.masterGain);
 
+    this.initNoiseBuffers();
     this.loadTrackList();
+  }
+
+  /** Pre-generate all noise buffers used by SFX */
+  private initNoiseBuffers(): void {
+    // Shoot whoosh noise (0.15s)
+    this.shootNoiseBuffer = this.createNoiseBuffer(0.15, (t) => (1 - t) * 0.4);
+
+    // Explode impact noise (0.2s)
+    this.explodeNoiseBuffer = this.createNoiseBuffer(0.2, (t) => (1 - t * t) * 0.5);
+
+    // Death crunch noise (0.12s)
+    this.deathNoiseBuffer = this.createNoiseBuffer(0.12, (t) =>
+      Math.max(-0.8, Math.min(0.8, 2)) * (1 - t)  // clipped
+    );
+
+    // Flutter blips (3 × 0.04s)
+    for (let i = 0; i < 3; i++) {
+      this.flutterNoiseBuffers.push(this.createNoiseBuffer(0.04, () => 0.15));
+    }
+  }
+
+  /** Create a noise buffer with an amplitude envelope */
+  private createNoiseBuffer(duration: number, envelope: (t: number) => number): AudioBuffer {
+    const ctx = this.ctx!;
+    const bufferSize = Math.ceil(ctx.sampleRate * duration);
+    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      const t = i / bufferSize;
+      data[i] = (Math.random() * 2 - 1) * envelope(t);
+    }
+    return buffer;
   }
 
   // ── Track list discovery ──────────────────────────────────
@@ -122,17 +161,10 @@ export class AudioManager {
     const ctx = this.ctx;
     const now = ctx.currentTime;
 
-    // Noise burst for whoosh
+    // Noise burst for whoosh (using cached buffer)
     const duration = 0.15;
-    const bufferSize = ctx.sampleRate * duration;
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      const t = i / bufferSize;
-      data[i] = (Math.random() * 2 - 1) * (1 - t) * 0.4;
-    }
     const noise = ctx.createBufferSource();
-    noise.buffer = buffer;
+    noise.buffer = this.shootNoiseBuffer;
 
     // Bandpass filter sweeps up for whoosh
     const filter = ctx.createBiquadFilter();
@@ -180,17 +212,10 @@ export class AudioManager {
     boom.start(now);
     boom.stop(now + 0.35);
 
-    // Noise burst for impact texture
+    // Noise burst for impact texture (using cached buffer)
     const duration = 0.2;
-    const bufferSize = ctx.sampleRate * duration;
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      const t = i / bufferSize;
-      data[i] = (Math.random() * 2 - 1) * (1 - t * t) * 0.5;
-    }
     const noise = ctx.createBufferSource();
-    noise.buffer = buffer;
+    noise.buffer = this.explodeNoiseBuffer;
     const noiseGain = ctx.createGain();
     noiseGain.gain.setValueAtTime(0.4, now);
     noiseGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
@@ -219,18 +244,10 @@ export class AudioManager {
     const ctx = this.ctx;
     const now = ctx.currentTime;
 
-    // Pop/crunch — short noise burst with resonance
+    // Pop/crunch — short noise burst with resonance (using cached buffer)
     const duration = 0.12;
-    const bufferSize = ctx.sampleRate * duration;
-    const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      const t = i / bufferSize;
-      // Clipped noise for crunch
-      data[i] = Math.max(-0.8, Math.min(0.8, (Math.random() * 2 - 1) * 2)) * (1 - t);
-    }
     const noise = ctx.createBufferSource();
-    noise.buffer = buffer;
+    noise.buffer = this.deathNoiseBuffer;
 
     const filter = ctx.createBiquadFilter();
     filter.type = 'highpass';
@@ -256,17 +273,12 @@ export class AudioManager {
     osc.start(now);
     osc.stop(now + 0.3);
 
-    // Paper flutter — rapid quiet noise blips
+    // Paper flutter — rapid quiet noise blips (using cached buffers)
     for (let i = 0; i < 3; i++) {
       const d = 0.1 + i * 0.08;
       const flutterDur = 0.04;
-      const fb = ctx.createBuffer(1, ctx.sampleRate * flutterDur, ctx.sampleRate);
-      const fd = fb.getChannelData(0);
-      for (let j = 0; j < fd.length; j++) {
-        fd[j] = (Math.random() * 2 - 1) * 0.15;
-      }
       const fs = ctx.createBufferSource();
-      fs.buffer = fb;
+      fs.buffer = this.flutterNoiseBuffers[i];
       const fg = ctx.createGain();
       fg.gain.setValueAtTime(0.15, now + d);
       fg.gain.exponentialRampToValueAtTime(0.001, now + d + flutterDur);

@@ -24,6 +24,9 @@ export class Tiger {
   private isGrounded: boolean = true;
   private position: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
 
+  // Pre-allocated scratch vector for movement calculations
+  private readonly _moveDir = new THREE.Vector3();
+
   // Animation
   private walkCycle: number = 0;
 
@@ -315,24 +318,23 @@ export class Tiger {
     const isSprinting = this.input.sprint;
     const maxSpeed = isSprinting ? this.SPRINT_SPEED : this.WALK_SPEED;
 
-    // Get movement direction
-    const moveDirection = new THREE.Vector3();
+    // Get movement direction (reuse scratch vector)
+    const moveDirection = this._moveDir.set(0, 0, 0);
 
-    if (this.input.forward) {
-      moveDirection.add(this.camera.getForward());
+    // Camera returns shared vectors — read values before next call overwrites them
+    if (this.input.forward || this.input.backward) {
+      const fwd = this.camera.getForward();
+      if (this.input.forward) moveDirection.add(fwd);
+      if (this.input.backward) moveDirection.sub(fwd);
     }
-    if (this.input.backward) {
-      moveDirection.sub(this.camera.getForward());
-    }
-    if (this.input.left) {
-      moveDirection.sub(this.camera.getRight());
-    }
-    if (this.input.right) {
-      moveDirection.add(this.camera.getRight());
+    if (this.input.left || this.input.right) {
+      const right = this.camera.getRight();
+      if (this.input.right) moveDirection.add(right);
+      if (this.input.left) moveDirection.sub(right);
     }
 
     // Apply movement
-    if (moveDirection.length() > 0) {
+    if (moveDirection.lengthSq() > 0) {
       moveDirection.normalize();
 
       // Accelerate
@@ -433,15 +435,17 @@ export class Tiger {
     this.mesh.position.copy(this.position);
   }
 
+  /** Returns the position vector directly. Do NOT mutate — use setPosition() instead. */
   public getPosition(): THREE.Vector3 {
-    return this.position.clone();
+    return this.position;
   }
 
   public setVelocity(x: number, y: number, z: number): void {
     this.velocity.set(x, y, z);
   }
 
+  /** Returns the velocity vector directly. Do NOT mutate. */
   public getVelocity(): THREE.Vector3 {
-    return this.velocity.clone();
+    return this.velocity;
   }
 }

@@ -34,6 +34,39 @@ const ENEMY_CONFIG: Record<EnemyType, { speedMin: number; speedMax: number; heal
   executive:      { speedMin: 1.5, speedMax: 2.5, health: 2, scale: 1.3 },
 };
 
+// ─── Shared material cache (avoids creating duplicate GPU materials) ──
+const materialCache = new Map<string, THREE.MeshStandardMaterial>();
+
+function mat(color: number, roughness = 0.6): THREE.MeshStandardMaterial {
+  const key = `${color}:${roughness}`;
+  let m = materialCache.get(key);
+  if (!m) {
+    m = new THREE.MeshStandardMaterial({ color, roughness });
+    materialCache.set(key, m);
+  }
+  return m;
+}
+
+function emissiveMat(color: number, intensity: number): THREE.MeshStandardMaterial {
+  const key = `e:${color}:${intensity}`;
+  let m = materialCache.get(key);
+  if (!m) {
+    m = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: intensity });
+    materialCache.set(key, m);
+  }
+  return m;
+}
+
+/** Dispose all geometries (but NOT shared materials) in a group hierarchy */
+function disposeGroup(group: THREE.Group): void {
+  group.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.geometry.dispose();
+      // Materials are shared via cache — do NOT dispose them
+    }
+  });
+}
+
 export class EnemyManager {
   private scene: THREE.Scene;
   private enemies: Enemy[] = [];
@@ -50,6 +83,14 @@ export class EnemyManager {
   private readonly ENEMY_HALF_SIZE = new THREE.Vector3(0.4, 0.9, 0.4);
   private readonly BLAST_RADIUS = 4;
   private readonly DETECTION_RANGE = 22;
+
+  // Pre-allocated scratch objects to avoid per-frame allocation
+  private readonly _toPlayer = new THREE.Vector3();
+  private readonly _velocity = new THREE.Vector3();
+  private readonly _enemyBox = new THREE.Box3();
+  private readonly _enemySize = new THREE.Vector3();
+  private readonly _testPos = new THREE.Vector3();
+  private elapsedTime: number = 0;
 
   // Spawn zones mapped to department clusters with relevant enemy types
   private readonly SPAWN_ZONES: SpawnZone[] = [
@@ -523,32 +564,39 @@ export class EnemyManager {
   // ─── Collision ─────────────────────────────────────────────────────
 
   private isCollidingAt(position: THREE.Vector3): boolean {
-    const box = new THREE.Box3().setFromCenterAndSize(position, this.ENEMY_HALF_SIZE.clone().multiplyScalar(2));
+    this._enemySize.set(
+      this.ENEMY_HALF_SIZE.x * 2,
+      this.ENEMY_HALF_SIZE.y * 2,
+      this.ENEMY_HALF_SIZE.z * 2
+    );
+    this._enemyBox.setFromCenterAndSize(position, this._enemySize);
     for (const collider of this.colliders) {
-      if (box.intersectsBox(collider)) return true;
+      if (this._enemyBox.intersectsBox(collider)) return true;
     }
     return false;
   }
 
   private moveWithCollision(position: THREE.Vector3, velocity: THREE.Vector3): THREE.Vector3 {
-    const newPos = position.clone().add(velocity);
-    if (!this.isCollidingAt(newPos)) return newPos;
+    this._testPos.copy(position).add(velocity);
+    if (!this.isCollidingAt(this._testPos)) return this._testPos;
 
-    const xOnly = position.clone();
-    xOnly.x += velocity.x;
-    if (!this.isCollidingAt(xOnly)) return xOnly;
+    this._testPos.copy(position);
+    this._testPos.x += velocity.x;
+    if (!this.isCollidingAt(this._testPos)) return this._testPos;
 
-    const zOnly = position.clone();
-    zOnly.z += velocity.z;
-    if (!this.isCollidingAt(zOnly)) return zOnly;
+    this._testPos.copy(position);
+    this._testPos.z += velocity.z;
+    if (!this.isCollidingAt(this._testPos)) return this._testPos;
 
-    return position.clone();
+    this._testPos.copy(position);
+    return this._testPos;
   }
 
   // ─── Update ────────────────────────────────────────────────────────
 
   public update(deltaTime: number, playerPosition: THREE.Vector3): void {
     this.playerPosition.copy(playerPosition);
+    this.elapsedTime += deltaTime;
 
     this.spawnTimer += deltaTime;
     if (this.spawnTimer >= this.SPAWN_INTERVAL) {
@@ -556,39 +604,43 @@ export class EnemyManager {
       this.spawnEnemy();
     }
 
+    const time = this.elapsedTime;
+
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
 
       if (enemy.state === 'patrol') {
-        const toPlayer = this.playerPosition.clone().sub(enemy.position);
-        toPlayer.y = 0;
-        const distToPlayer = toPlayer.length();
+        this._toPlayer.copy(this.playerPosition).sub(enemy.position);
+        this._toPlayer.y = 0;
+        const distToPlayer = this._toPlayer.length();
 
         if (distToPlayer > 1.2) {
-          const direction = toPlayer.normalize();
+          // _toPlayer is now the direction (normalized in-place)
+          this._toPlayer.normalize();
 
           if (distToPlayer > this.DETECTION_RANGE) {
-            direction.x += Math.sin(Date.now() * 0.001 + i * 2.5) * 0.4;
-            direction.z += Math.cos(Date.now() * 0.001 + i * 2.5) * 0.4;
-            direction.normalize();
+            this._toPlayer.x += Math.sin(time + i * 2.5) * 0.4;
+            this._toPlayer.z += Math.cos(time + i * 2.5) * 0.4;
+            this._toPlayer.normalize();
           }
 
           const moveSpeed = enemy.speed * deltaTime;
-          const velocity = direction.clone().multiplyScalar(moveSpeed);
-          const newPos = this.moveWithCollision(enemy.position, velocity);
+          this._velocity.copy(this._toPlayer).multiplyScalar(moveSpeed);
+
+          // Save the direction before moveWithCollision may overwrite _testPos
+          const dirX = this._toPlayer.x;
+          const dirZ = this._toPlayer.z;
+
+          const newPos = this.moveWithCollision(enemy.position, this._velocity);
           enemy.position.copy(newPos);
           enemy.mesh.position.copy(enemy.position);
 
-          const facing = newPos.clone().sub(enemy.position);
-          if (facing.length() < 0.001) {
-            enemy.mesh.rotation.y = Math.atan2(toPlayer.x, toPlayer.z);
-          } else {
-            enemy.mesh.rotation.y = Math.atan2(direction.x, direction.z);
-          }
+          // Face movement direction (use saved direction since _toPlayer may be reused)
+          enemy.mesh.rotation.y = Math.atan2(dirX, dirZ);
         }
 
-        // Walk bob — faster types bob faster
-        enemy.mesh.position.y = Math.abs(Math.sin(Date.now() * 0.006 * enemy.speed)) * 0.06;
+        // Walk bob — use elapsed time instead of Date.now()
+        enemy.mesh.position.y = Math.abs(Math.sin(time * 6 * enemy.speed)) * 0.06;
 
       } else if (enemy.state === 'dying') {
         enemy.deathTimer += deltaTime;
@@ -600,6 +652,7 @@ export class EnemyManager {
 
         if (enemy.deathTimer >= 0.5) {
           this.scene.remove(enemy.mesh);
+          disposeGroup(enemy.mesh);
           this.enemies.splice(i, 1);
         }
       }
@@ -608,7 +661,7 @@ export class EnemyManager {
     // Death particles
     for (let i = this.deathParticles.length - 1; i >= 0; i--) {
       const p = this.deathParticles[i];
-      p.mesh.position.add(p.velocity.clone().multiplyScalar(deltaTime));
+      p.mesh.position.addScaledVector(p.velocity, deltaTime);
       p.velocity.y -= 8 * deltaTime;
       p.mesh.rotation.x += 4 * deltaTime;
       p.mesh.rotation.z += 3 * deltaTime;
@@ -656,20 +709,27 @@ export class EnemyManager {
     return kills;
   }
 
+  private static readonly HIT_FLASH_MAT = new THREE.MeshStandardMaterial({ color: 0xff0000 });
+
   private damageEnemy(enemy: Enemy, amount: number): void {
     enemy.health -= amount;
     if (enemy.health <= 0) {
       this.killEnemy(enemy);
     } else {
       // Flash red on hit (not dead yet — executives take 2 hits)
+      // Swap materials temporarily (shared materials can't be mutated)
+      const originals: { mesh: THREE.Mesh; material: THREE.Material }[] = [];
       enemy.mesh.traverse((child) => {
         if (child instanceof THREE.Mesh) {
-          const m = child.material as THREE.MeshStandardMaterial;
-          const orig = m.color.getHex();
-          m.color.setHex(0xff0000);
-          setTimeout(() => m.color.setHex(orig), 100);
+          originals.push({ mesh: child, material: child.material as THREE.Material });
+          child.material = EnemyManager.HIT_FLASH_MAT;
         }
       });
+      setTimeout(() => {
+        for (const entry of originals) {
+          entry.mesh.material = entry.material;
+        }
+      }, 100);
     }
   }
 
@@ -783,16 +843,3 @@ export class EnemyManager {
   }
 }
 
-// ─── Material helpers ──────────────────────────────────────────────
-
-function mat(color: number, roughness = 0.6): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({ color, roughness });
-}
-
-function emissiveMat(color: number, intensity: number): THREE.MeshStandardMaterial {
-  return new THREE.MeshStandardMaterial({
-    color,
-    emissive: color,
-    emissiveIntensity: intensity,
-  });
-}

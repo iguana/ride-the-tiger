@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 export interface Department {
   id: string;
@@ -97,20 +98,29 @@ export class CallCenter {
     ceiling.position.y = 6;
     this.group.add(ceiling);
 
-    const lightPanelGeometry = new THREE.PlaneGeometry(2, 4);
+    // Merge all ceiling light panels into a single draw call (121 panels → 1 mesh)
     const lightPanelMaterial = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       emissive: 0xffffff,
       emissiveIntensity: 0.5,
     });
+    const panelGeometries: THREE.BufferGeometry[] = [];
+    const basePanelGeo = new THREE.PlaneGeometry(2, 4);
     for (let x = -50; x <= 50; x += 10) {
       for (let z = -50; z <= 50; z += 10) {
-        const lightPanel = new THREE.Mesh(lightPanelGeometry, lightPanelMaterial);
-        lightPanel.rotation.x = Math.PI / 2;
-        lightPanel.position.set(x, 5.98, z);
-        this.group.add(lightPanel);
+        const g = basePanelGeo.clone();
+        g.rotateX(Math.PI / 2);
+        g.translate(x, 5.98, z);
+        panelGeometries.push(g);
       }
     }
+    const mergedPanelGeo = mergeGeometries(panelGeometries, false);
+    if (mergedPanelGeo) {
+      this.group.add(new THREE.Mesh(mergedPanelGeo, lightPanelMaterial));
+    }
+    // Clean up intermediate geometries
+    for (const g of panelGeometries) g.dispose();
+    basePanelGeo.dispose();
   }
 
   private createWalls(): void {
@@ -958,16 +968,25 @@ export class CallCenter {
       ));
     }
 
-    // Parking stripe lines
+    // Parking stripe lines (merged into single mesh)
+    const stripeGeometries: THREE.BufferGeometry[] = [];
+    const baseStripeGeo = new THREE.PlaneGeometry(0.15, 3);
     for (let z = -8; z <= 8; z += 4) {
-      const stripe = new THREE.Mesh(new THREE.PlaneGeometry(0.15, 3), stripeMat);
-      stripe.rotation.x = -Math.PI / 2;
-      stripe.position.set(startX + 12, 0.01, z);
-      this.group.add(stripe);
-      const stripe2 = stripe.clone();
-      stripe2.position.set(startX + 22, 0.01, z);
-      this.group.add(stripe2);
+      const g1 = baseStripeGeo.clone();
+      g1.rotateX(-Math.PI / 2);
+      g1.translate(startX + 12, 0.01, z);
+      stripeGeometries.push(g1);
+      const g2 = baseStripeGeo.clone();
+      g2.rotateX(-Math.PI / 2);
+      g2.translate(startX + 22, 0.01, z);
+      stripeGeometries.push(g2);
     }
+    const mergedStripes = mergeGeometries(stripeGeometries, false);
+    if (mergedStripes) {
+      this.group.add(new THREE.Mesh(mergedStripes, stripeMat));
+    }
+    for (const g of stripeGeometries) g.dispose();
+    baseStripeGeo.dispose();
 
     // Parked cars (simple box cars)
     const carConfigs = [
@@ -1276,12 +1295,20 @@ export class CallCenter {
       ));
     }
 
-    // Iron fence posts (vertical bars)
+    // Iron fence posts (merged into single mesh)
+    const postGeometries: THREE.BufferGeometry[] = [];
+    const basePostGeo = new THREE.BoxGeometry(0.05, fenceH + 0.3, 0.05);
     for (let z = -graveyardDepth / 2; z <= graveyardDepth / 2; z += 2) {
-      const post = new THREE.Mesh(new THREE.BoxGeometry(0.05, fenceH + 0.3, 0.05), ironMat);
-      post.position.set(startX, fenceH / 2 + 0.15, z);
-      this.group.add(post);
+      const g = basePostGeo.clone();
+      g.translate(startX, fenceH / 2 + 0.15, z);
+      postGeometries.push(g);
     }
+    const mergedPosts = mergeGeometries(postGeometries, false);
+    if (mergedPosts) {
+      this.group.add(new THREE.Mesh(mergedPosts, ironMat));
+    }
+    for (const g of postGeometries) g.dispose();
+    basePostGeo.dispose();
   }
 
   /** Small tombstone text (using canvas texture) */

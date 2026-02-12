@@ -5,9 +5,7 @@ export default defineConfig({
   build: {
     target: 'esnext',
   },
-  optimizeDeps: {
-    exclude: ['@dimforge/rapier3d-compat'],
-  },
+  optimizeDeps: {},
   server: {
     allowedHosts: true,
   },

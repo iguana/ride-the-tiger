@@ -14,6 +14,19 @@ interface Particle {
   maxLifetime: number;
 }
 
+/** Dispose all geometries and materials in a group hierarchy */
+function disposeProjectile(group: THREE.Group): void {
+  group.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      child.geometry.dispose();
+      // Phone materials are created per-phone, so dispose them
+      const m = child.material;
+      if (Array.isArray(m)) m.forEach(mat => mat.dispose());
+      else m.dispose();
+    }
+  });
+}
+
 export class PhoneShooter {
   private scene: THREE.Scene;
   private projectiles: Projectile[] = [];
@@ -24,6 +37,10 @@ export class PhoneShooter {
   private readonly PROJECTILE_SPEED = 30;
   private readonly MAX_LIFETIME = 5;
   private readonly SPIN_SPEED = 10;
+
+  // Pre-allocated scratch objects to avoid per-frame allocation
+  private readonly _scratchVec = new THREE.Vector3();
+  private readonly _phoneBox = new THREE.Box3();
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
@@ -170,9 +187,7 @@ export class PhoneShooter {
       const projectile = this.projectiles[i];
 
       // Update position
-      projectile.mesh.position.add(
-        projectile.velocity.clone().multiplyScalar(deltaTime)
-      );
+      projectile.mesh.position.addScaledVector(projectile.velocity, deltaTime);
 
       // Spin the phone as it flies
       projectile.mesh.rotation.x += this.SPIN_SPEED * deltaTime;
@@ -200,12 +215,12 @@ export class PhoneShooter {
       // Hit a wall/cubicle
       if (!hit) {
         const pos = projectile.mesh.position;
-        const phoneBox = new THREE.Box3().setFromCenterAndSize(
+        this._phoneBox.setFromCenterAndSize(
           pos,
-          new THREE.Vector3(0.4, 0.3, 0.4)
+          this._scratchVec.set(0.4, 0.3, 0.4)
         );
         for (const collider of this.colliders) {
-          if (phoneBox.intersectsBox(collider)) {
+          if (this._phoneBox.intersectsBox(collider)) {
             hit = true;
             break;
           }
@@ -213,11 +228,14 @@ export class PhoneShooter {
       }
 
       if (hit) {
-        this.explode(projectile.mesh.position.clone());
+        this._scratchVec.copy(projectile.mesh.position);
         this.scene.remove(projectile.mesh);
+        disposeProjectile(projectile.mesh);
         this.projectiles.splice(i, 1);
+        this.explode(this._scratchVec);
       } else if (projectile.lifetime > this.MAX_LIFETIME) {
         this.scene.remove(projectile.mesh);
+        disposeProjectile(projectile.mesh);
         this.projectiles.splice(i, 1);
       }
     }
@@ -226,9 +244,7 @@ export class PhoneShooter {
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const particle = this.particles[i];
 
-      particle.mesh.position.add(
-        particle.velocity.clone().multiplyScalar(deltaTime)
-      );
+      particle.mesh.position.addScaledVector(particle.velocity, deltaTime);
 
       // Lighter gravity so cash flutters
       particle.velocity.y -= 6 * deltaTime;

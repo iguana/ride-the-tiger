@@ -27,6 +27,10 @@ export class Game {
   private isRunning: boolean = false;
   private footstepTimer: number = 0;
 
+  // Pre-allocated scratch vectors to avoid per-frame allocation
+  private readonly _prevPos = new THREE.Vector3();
+  private readonly _movement = new THREE.Vector3();
+
   private startScreen: HTMLElement;
   private container: HTMLElement;
 
@@ -185,23 +189,23 @@ export class Game {
   };
 
   private update(deltaTime: number): void {
-    // Store previous position
-    const prevPosition = this.tiger.getPosition();
+    // Store previous position (copy since getPosition returns the live reference)
+    this._prevPos.copy(this.tiger.getPosition());
 
     // Update tiger (handles input and movement)
     this.tiger.update(deltaTime);
 
     // Check collision and correct position if needed
     const newPosition = this.tiger.getPosition();
-    const movement = newPosition.clone().sub(prevPosition);
+    this._movement.copy(newPosition).sub(this._prevPos);
 
-    const correctedMovement = this.physics.checkCollision(prevPosition, movement);
+    const correctedMovement = this.physics.checkCollision(this._prevPos, this._movement);
 
-    if (!correctedMovement.equals(movement)) {
+    if (!correctedMovement.equals(this._movement)) {
       this.tiger.setPosition(
-        prevPosition.x + correctedMovement.x,
-        prevPosition.y + correctedMovement.y,
-        prevPosition.z + correctedMovement.z
+        this._prevPos.x + correctedMovement.x,
+        this._prevPos.y + correctedMovement.y,
+        this._prevPos.z + correctedMovement.z
       );
     }
 

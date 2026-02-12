@@ -14,6 +14,11 @@ export class FirstPersonCamera {
   private headBobTime: number = 0;
   private baseY: number;
 
+  // Pre-allocated scratch vectors to avoid per-frame allocation
+  private readonly _direction = new THREE.Vector3();
+  private readonly _forward = new THREE.Vector3();
+  private readonly _right = new THREE.Vector3();
+
   constructor() {
     this.camera = new THREE.PerspectiveCamera(
       75,
@@ -84,21 +89,21 @@ export class FirstPersonCamera {
   }
 
   public getDirection(): THREE.Vector3 {
-    const direction = new THREE.Vector3();
-    this.camera.getWorldDirection(direction);
-    return direction;
+    this.camera.getWorldDirection(this._direction);
+    return this._direction;
   }
 
   public getForward(): THREE.Vector3 {
-    const direction = this.getDirection();
-    direction.y = 0;
-    direction.normalize();
-    return direction;
+    this.camera.getWorldDirection(this._forward);
+    this._forward.y = 0;
+    this._forward.normalize();
+    return this._forward;
   }
 
   public getRight(): THREE.Vector3 {
-    const forward = this.getForward();
-    return new THREE.Vector3(-forward.z, 0, forward.x);
+    const fwd = this.getForward();
+    this._right.set(-fwd.z, 0, fwd.x);
+    return this._right;
   }
 
   public get locked(): boolean {

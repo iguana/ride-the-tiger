@@ -138,13 +138,15 @@ export class GameScene {
     mainLight.castShadow = true;
     mainLight.shadow.mapSize.width = 2048;
     mainLight.shadow.mapSize.height = 2048;
-    mainLight.shadow.camera.near = 0.5;
-    mainLight.shadow.camera.far = 100;
-    mainLight.shadow.camera.left = -100;
-    mainLight.shadow.camera.right = 100;
-    mainLight.shadow.camera.top = 100;
-    mainLight.shadow.camera.bottom = -100;
-    mainLight.shadow.bias = -0.0001;
+    mainLight.shadow.camera.near = 1;
+    mainLight.shadow.camera.far = 120;
+    // Tighter frustum focused on the main indoor play area (120x120)
+    // gives ~3.4x better shadow texel density vs the old -100..100 range
+    mainLight.shadow.camera.left = -70;
+    mainLight.shadow.camera.right = 70;
+    mainLight.shadow.camera.top = 70;
+    mainLight.shadow.camera.bottom = -70;
+    mainLight.shadow.bias = -0.0005;
     this.scene.add(mainLight);
 
     // Fill light from the opposite side
