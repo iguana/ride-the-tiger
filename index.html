@@ -354,6 +354,23 @@
         font-weight: bold;
         border-left: 4px solid #4ade80;
       }
+      #calendar-display {
+        position: absolute;
+        top: 220px;
+        right: 20px;
+        background: rgba(0, 0, 0, 0.7);
+        color: #4ade80;
+        padding: 10px 18px;
+        border-radius: 8px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-size: 0.9rem;
+        font-weight: bold;
+        border-left: 4px solid #4ade80;
+        transition: transform 0.15s ease-out, color 0.3s;
+      }
+      #calendar-display.pulse {
+        transform: scale(1.15);
+      }
       #expense-container {
         position: fixed;
         bottom: 80px;
@@ -483,6 +500,10 @@
         border-color: #a855f7;
         box-shadow: 0 0 30px rgba(168, 85, 247, 0.3), inset 0 0 20px rgba(168, 85, 247, 0.05);
       }
+      .attack-card.meeting {
+        border-color: #3b82f6;
+        box-shadow: 0 0 30px rgba(59, 130, 246, 0.3), inset 0 0 20px rgba(59, 130, 246, 0.05);
+      }
       .attack-card .card-emoji {
         font-size: 3.5rem;
         margin-bottom: 8px;
@@ -512,6 +533,9 @@
       }
       .attack-card.hr .card-penalty {
         color: #a855f7;
+      }
+      .attack-card.meeting .card-penalty {
+        color: #3b82f6;
       }
       @keyframes cardSlideIn {
         from { transform: translateX(120px); opacity: 0; }
@@ -545,6 +569,63 @@
         0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
         60% { transform: translate(-50%, -50%) scale(1.1); }
         100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+      }
+
+      /* AI Event Alert */
+      #ai-event-alert {
+        position: absolute;
+        top: 12%;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.92);
+        color: #06b6d4;
+        padding: 20px 36px;
+        border-radius: 12px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        text-align: center;
+        display: none;
+        border: 2px solid #06b6d4;
+        box-shadow: 0 0 30px rgba(6, 182, 212, 0.4), inset 0 0 20px rgba(6, 182, 212, 0.05);
+        z-index: 160;
+        pointer-events: none;
+        animation: aiEventPulse 2s ease-in-out infinite;
+        min-width: 340px;
+        max-width: 480px;
+      }
+      #ai-event-alert .ai-event-label {
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.3em;
+        opacity: 0.6;
+        margin-bottom: 6px;
+      }
+      #ai-event-alert .ai-event-name {
+        font-size: 1.4rem;
+        font-weight: bold;
+        color: #fff;
+        margin-bottom: 4px;
+      }
+      #ai-event-alert .ai-event-desc {
+        font-size: 0.85rem;
+        color: #67e8f9;
+        font-style: italic;
+        margin-bottom: 10px;
+      }
+      #ai-event-alert .ai-event-action {
+        font-size: 0.9rem;
+        color: #06b6d4;
+        font-weight: bold;
+        letter-spacing: 0.1em;
+      }
+      @keyframes aiEventPulse {
+        0%, 100% {
+          border-color: #06b6d4;
+          box-shadow: 0 0 30px rgba(6, 182, 212, 0.4), inset 0 0 20px rgba(6, 182, 212, 0.05);
+        }
+        50% {
+          border-color: #22d3ee;
+          box-shadow: 0 0 50px rgba(6, 182, 212, 0.6), inset 0 0 30px rgba(6, 182, 212, 0.1);
+        }
       }
     </style>
   </head>
@@ -582,6 +663,7 @@
       <div id="kill-count">Managers fired: 0</div>
       <div id="budget-display">Budget: $10,000</div>
       <div id="review-display">Review: Good</div>
+      <div id="calendar-display">Calendar: 0/8</div>
       <div id="crosshair"></div>
       <div id="mission-complete">
         <h2>CHECKED IN!</h2>
@@ -589,6 +671,12 @@
       </div>
       <div id="qbr-warning">QBR APPROACHING</div>
       <div id="recharge-indicator">Finance Dept: Budget Recharge Available</div>
+      <div id="ai-event-alert">
+        <div class="ai-event-label">BREAKING NEWS</div>
+        <div class="ai-event-name"></div>
+        <div class="ai-event-desc"></div>
+        <div class="ai-event-action">Go to CTO Office to check it out!</div>
+      </div>
     </div>
     <div id="expense-container"></div>
     <div id="attack-card-container"></div>

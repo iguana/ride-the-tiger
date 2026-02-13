@@ -9,7 +9,7 @@ interface Enemy {
   targetPosition: THREE.Vector3;
   speed: number;
   health: number;
-  state: 'patrol' | 'dying' | 'stealing' | 'retreating' | 'reviewing';
+  state: 'patrol' | 'dying' | 'stealing' | 'retreating' | 'reviewing' | 'scheduling';
   deathTimer: number;
   type: EnemyType;
   homePosition: THREE.Vector3;
@@ -596,7 +596,7 @@ export class EnemyManager {
         this._toPlayer.y = 0;
         const distToPlayer = this._toPlayer.length();
 
-        // Check if financeGoblin/hrEnforcer should attack
+        // Check if enemies should attack
         if (distToPlayer <= this.ATTACK_RANGE && enemy.attackCooldown <= 0) {
           if (enemy.type === 'financeGoblin') {
             enemy.state = 'stealing';
@@ -609,6 +609,12 @@ export class EnemyManager {
             enemy.deathTimer = 0;
             this.onPlayerDamageCallback?.(enemy.type);
             this.flashEnemy(enemy, 0x9900ff);
+            continue;
+          } else if (enemy.type === 'manager' || enemy.type === 'salesBro' || enemy.type === 'itZombie' || enemy.type === 'executive') {
+            enemy.state = 'scheduling';
+            enemy.deathTimer = 0;
+            this.onPlayerDamageCallback?.(enemy.type);
+            this.flashEnemy(enemy, 0x3b82f6);
             continue;
           }
         }
@@ -648,6 +654,14 @@ export class EnemyManager {
 
       } else if (enemy.state === 'reviewing') {
         // Flash purple for FLASH_DURATION then resume patrol
+        enemy.deathTimer += deltaTime;
+        if (enemy.deathTimer >= this.FLASH_DURATION) {
+          enemy.state = 'retreating';
+          enemy.attackCooldown = this.ATTACK_COOLDOWN;
+        }
+
+      } else if (enemy.state === 'scheduling') {
+        // Flash blue for FLASH_DURATION then retreat
         enemy.deathTimer += deltaTime;
         if (enemy.deathTimer >= this.FLASH_DURATION) {
           enemy.state = 'retreating';
@@ -886,9 +900,12 @@ export class EnemyManager {
 
   private static readonly GREEN_FLASH_MAT = new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 0.5 });
   private static readonly PURPLE_FLASH_MAT = new THREE.MeshStandardMaterial({ color: 0x9900ff, emissive: 0x9900ff, emissiveIntensity: 0.5 });
+  private static readonly BLUE_FLASH_MAT = new THREE.MeshStandardMaterial({ color: 0x3b82f6, emissive: 0x3b82f6, emissiveIntensity: 0.5 });
 
   private flashEnemy(enemy: Enemy, color: number): void {
-    const flashMat = color === 0x00ff00 ? EnemyManager.GREEN_FLASH_MAT : EnemyManager.PURPLE_FLASH_MAT;
+    const flashMat = color === 0x00ff00 ? EnemyManager.GREEN_FLASH_MAT
+      : color === 0x3b82f6 ? EnemyManager.BLUE_FLASH_MAT
+      : EnemyManager.PURPLE_FLASH_MAT;
     const originals: { mesh: THREE.Mesh; material: THREE.Material }[] = [];
     enemy.mesh.traverse((child) => {
       if (child instanceof THREE.Mesh) {

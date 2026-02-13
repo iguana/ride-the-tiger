@@ -23,6 +23,19 @@ export const FINANCE_ATTACKS: AttackItem[] = [
   { emoji: '💎', name: 'ALIGNMENT CRYSTALS', description: 'Cross-functional chakra rebalancing stones', minAmount: 300, maxAmount: 600 },
 ];
 
+export const MEETING_ATTACKS: AttackItem[] = [
+  { emoji: '📅', name: 'SPRINT RETROSPECTIVE', description: 'Discussing what went wrong discussing what went wrong' },
+  { emoji: '📊', name: 'QUARTERLY PLANNING', description: 'Planning the plan for the planning meeting' },
+  { emoji: '🪮', name: 'BACKLOG GROOMING', description: 'Grooming the backlog of grooming sessions' },
+  { emoji: '👥', name: 'MANDATORY 1:1', description: "Your manager's manager wants to 'touch base'" },
+  { emoji: '📣', name: 'ALL-HANDS MEETING', description: 'CEO reads the slide deck you already read' },
+  { emoji: '🔄', name: 'SYNC-UP', description: 'Syncing about the sync. Pre-sync optional' },
+  { emoji: '💡', name: 'BRAINSTORM SESSION', description: 'Innovation theater. Post-its mandatory' },
+  { emoji: '📈', name: 'STATUS UPDATE', description: 'Updating the status of the status updates' },
+  { emoji: '🎯', name: 'OKR ALIGNMENT', description: 'Aligning the alignment of aligned objectives' },
+  { emoji: '☕', name: 'COFFEE CHAT', description: 'Not optional. HR is watching' },
+];
+
 export const HR_ATTACKS: AttackItem[] = [
   { emoji: '📋', name: 'EXCESSIVE ENTHUSIASM', description: 'Smiling in meetings is now a policy violation' },
   { emoji: '🚨', name: 'UNAUTHORIZED INNOVATION', description: 'Thinking outside the box without Form 27-B' },
@@ -43,10 +56,15 @@ export class BudgetManager {
   private readonly RECHARGE_COOLDOWN = 15;
   private readonly RECHARGE_AMOUNT = 3000;
 
+  private calendarSlots: number = 0;
+  private readonly MAX_CALENDAR = 8;
+
   private onExpense: ((amount: number, attack: AttackItem) => void) | null = null;
   private onReviewChange: ((level: ReviewLevel, attack: AttackItem) => void) | null = null;
   private onBudgetChange: ((budget: number) => void) | null = null;
   private onFired: ((reason: string) => void) | null = null;
+  private onMeeting: ((slots: number, attack: AttackItem) => void) | null = null;
+  private onCalendarChange: ((slots: number) => void) | null = null;
 
   public getBudget(): number {
     return this.budget;
@@ -72,6 +90,14 @@ export class BudgetManager {
     this.onFired = cb;
   }
 
+  public setOnMeeting(cb: (slots: number, attack: AttackItem) => void): void {
+    this.onMeeting = cb;
+  }
+
+  public setOnCalendarChange(cb: (slots: number) => void): void {
+    this.onCalendarChange = cb;
+  }
+
   public stealBudget(): number {
     const attack = FINANCE_ATTACKS[Math.floor(Math.random() * FINANCE_ATTACKS.length)];
     const min = attack.minAmount ?? 200;
@@ -81,6 +107,28 @@ export class BudgetManager {
     this.onExpense?.(amount, attack);
     this.onBudgetChange?.(this.budget);
     return amount;
+  }
+
+  public getCalendarSlots(): number {
+    return this.calendarSlots;
+  }
+
+  public scheduleMeeting(): void {
+    const attack = MEETING_ATTACKS[Math.floor(Math.random() * MEETING_ATTACKS.length)];
+    if (this.calendarSlots < this.MAX_CALENDAR) {
+      this.calendarSlots++;
+      this.onMeeting?.(this.calendarSlots, attack);
+      this.onCalendarChange?.(this.calendarSlots);
+    } else {
+      // Calendar full — escalate review instead
+      this.onMeeting?.(this.calendarSlots, attack);
+      this.escalateReview();
+    }
+  }
+
+  public clearCalendar(): void {
+    this.calendarSlots = 0;
+    this.onCalendarChange?.(this.calendarSlots);
   }
 
   public escalateReview(): void {
@@ -132,7 +180,9 @@ export class BudgetManager {
     this.budget = 10000;
     this.reviewLevel = 'good';
     this.rechargeCooldown = 0;
+    this.calendarSlots = 0;
     this.onBudgetChange?.(this.budget);
     this.onReviewChange?.(this.reviewLevel, HR_ATTACKS[0]);
+    this.onCalendarChange?.(this.calendarSlots);
   }
 }

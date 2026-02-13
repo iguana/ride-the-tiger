@@ -56,6 +56,27 @@ export class Game {
   private qbrWarningShown: boolean = false;
   private qbrHitPlayer: boolean = false;
 
+  // AI model event system
+  private aiEventTimer: number = 0;
+  private readonly AI_EVENT_INTERVAL = 120;
+  private aiEventActive: boolean = false;
+  private aiEventModelName: string = '';
+  private readonly CTO_POSITION = new THREE.Vector3(40, 0, -45);
+  private readonly CTO_RANGE = 4;
+  private readonly _ctoDelta = new THREE.Vector3();
+  private static readonly AI_MODELS = [
+    { name: 'Claude 5.0 Opus', description: 'It can write its own JIRA tickets now' },
+    { name: 'GPT-7 Turbo', description: "This one definitely won't hallucinate" },
+    { name: 'Gemini Ultra 3.0', description: 'Google says this changes everything. Again' },
+    { name: 'LLaMA 5 Uncensored', description: 'Your GPU is already crying' },
+    { name: 'Mistral XXL', description: 'The French model that speaks Assembly' },
+    { name: 'Grok 4.20', description: "Elon says it's the best. No bias" },
+    { name: 'DeepSeek R2', description: 'Thinks for 47 minutes before answering' },
+    { name: 'Anthropic Haiku 6.0', description: 'Writes poetry about your code reviews' },
+    { name: 'Perplexity Sovereign', description: 'It Googles stuff but with confidence' },
+    { name: 'Cohere Command X', description: 'Enterprise-ready. Whatever that means' },
+  ];
+
   // Finance recharge zone
   private readonly FINANCE_POSITION = new THREE.Vector3(25, 0, 50);
   private readonly FINANCE_RECHARGE_RANGE = 5;
@@ -100,6 +121,7 @@ export class Game {
       this.audio.playEnemyDeath();
       if (count % 5 === 0) {
         this.budgetManager.resetReview();
+        this.budgetManager.clearCalendar();
       }
     });
 
@@ -112,6 +134,10 @@ export class Game {
       } else if (type === 'hrEnforcer') {
         this.budgetManager.escalateReview();
         this.audio.playReview();
+      } else {
+        // manager, salesBro, itZombie, executive → schedule meeting
+        this.budgetManager.scheduleMeeting();
+        this.audio.playMeeting();
       }
     });
 
@@ -125,6 +151,12 @@ export class Game {
     this.budgetManager.setOnReviewChange((level, attack) => {
       this.hud.updateReview(level);
       this.hud.showAttackCard(attack, 'hr');
+    });
+    this.budgetManager.setOnMeeting((slots, attack) => {
+      this.hud.showAttackCard(attack, 'meeting', undefined, slots);
+    });
+    this.budgetManager.setOnCalendarChange((slots) => {
+      this.hud.updateCalendar(slots);
     });
     this.budgetManager.setOnFired((reason) => {
       this.triggerGameOver(reason);
@@ -289,6 +321,10 @@ export class Game {
     this.qbrWarningShown = false;
     this.qbrHitPlayer = false;
 
+    // Reset AI event
+    this.aiEventTimer = 0;
+    this.aiEventActive = false;
+
     // Teardown and rebuild level
     this.scene.scene.remove(this.callCenter.group);
     this.enemyManager.clear();
@@ -394,6 +430,9 @@ export class Game {
 
     // QBR system
     this.updateQBR(deltaTime);
+
+    // AI model event system
+    this.updateAIEvent(deltaTime);
 
     // Check warp door proximity
     if (this.warpCooldown > 0) {
@@ -508,6 +547,32 @@ export class Game {
       (this.qbrPlane.material as THREE.Material).dispose();
       this.qbrPlane.geometry.dispose();
       this.qbrPlane = null;
+    }
+  }
+
+  private updateAIEvent(deltaTime: number): void {
+    if (this.aiEventActive) {
+      // Check player proximity to CTO office
+      const playerPos = this.tiger.getPosition();
+      this._ctoDelta.copy(playerPos).sub(this.CTO_POSITION);
+      this._ctoDelta.y = 0;
+      if (this._ctoDelta.length() < this.CTO_RANGE) {
+        this.aiEventActive = false;
+        this.aiEventTimer = 0;
+        this.hud.showAIEventComplete(this.aiEventModelName);
+        this.audio.playMissionComplete();
+      }
+    } else {
+      this.aiEventTimer += deltaTime;
+      if (this.aiEventTimer >= this.AI_EVENT_INTERVAL) {
+        // Trigger new AI event
+        const model = Game.AI_MODELS[Math.floor(Math.random() * Game.AI_MODELS.length)];
+        this.aiEventModelName = model.name;
+        this.aiEventActive = true;
+        this.aiEventTimer = 0;
+        this.hud.showAIEvent(model.name, model.description);
+        this.audio.playAIEvent();
+      }
     }
   }
 

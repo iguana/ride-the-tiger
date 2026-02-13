@@ -28,9 +28,15 @@ export class HUD {
   private attackCardContainer: HTMLElement;
   private qbrWarning: HTMLElement;
   private rechargeIndicator: HTMLElement;
+  private calendarDisplay: HTMLElement;
   private gameOverElement: HTMLElement;
   private gameOverReason: HTMLElement;
   private gameOverSubtitle: HTMLElement;
+  private aiEventAlert: HTMLElement;
+  private aiEventName: HTMLElement;
+  private aiEventDesc: HTMLElement;
+
+  private readonly MAX_CALENDAR = 8;
 
   constructor() {
     this.hudElement = document.getElementById('hud')!;
@@ -41,11 +47,15 @@ export class HUD {
     this.budgetDisplay = document.getElementById('budget-display')!;
     this.reviewDisplay = document.getElementById('review-display')!;
     this.attackCardContainer = document.getElementById('attack-card-container')!;
+    this.calendarDisplay = document.getElementById('calendar-display')!;
     this.qbrWarning = document.getElementById('qbr-warning')!;
     this.rechargeIndicator = document.getElementById('recharge-indicator')!;
     this.gameOverElement = document.getElementById('game-over')!;
     this.gameOverReason = document.getElementById('game-over-reason')!;
     this.gameOverSubtitle = document.getElementById('game-over-subtitle')!;
+    this.aiEventAlert = document.getElementById('ai-event-alert')!;
+    this.aiEventName = this.aiEventAlert.querySelector('.ai-event-name')!;
+    this.aiEventDesc = this.aiEventAlert.querySelector('.ai-event-desc')!;
   }
 
   public show(): void {
@@ -126,7 +136,7 @@ export class HUD {
     this.reviewDisplay.style.borderLeftColor = color;
   }
 
-  public showAttackCard(attack: AttackItem, type: 'finance' | 'hr', amount?: number): void {
+  public showAttackCard(attack: AttackItem, type: 'finance' | 'hr' | 'meeting', amount?: number, calendarSlots?: number): void {
     // Remove any existing card
     this.attackCardContainer.innerHTML = '';
 
@@ -152,6 +162,12 @@ export class HUD {
     penalty.className = 'card-penalty';
     if (type === 'finance' && amount !== undefined) {
       penalty.textContent = `-$${amount.toLocaleString()}`;
+    } else if (type === 'meeting') {
+      if (calendarSlots !== undefined && calendarSlots >= this.MAX_CALENDAR) {
+        penalty.textContent = 'CALENDAR FULL';
+      } else {
+        penalty.textContent = `Calendar: ${calendarSlots ?? 0}/${this.MAX_CALENDAR}`;
+      }
     } else {
       penalty.textContent = `Review Escalated`;
     }
@@ -163,6 +179,27 @@ export class HUD {
     setTimeout(() => {
       if (card.parentNode) card.parentNode.removeChild(card);
     }, 5800);
+  }
+
+  public updateCalendar(slots: number): void {
+    this.calendarDisplay.textContent = `Calendar: ${slots}/${this.MAX_CALENDAR}`;
+    // Color shift: green → yellow → orange → red as calendar fills
+    const ratio = slots / this.MAX_CALENDAR;
+    let color: string;
+    if (ratio === 0) {
+      color = '#4ade80';
+    } else if (ratio < 0.5) {
+      color = '#facc15';
+    } else if (ratio < 0.875) {
+      color = '#f97316';
+    } else {
+      color = '#ef4444';
+    }
+    this.calendarDisplay.style.color = color;
+    this.calendarDisplay.style.borderLeftColor = color;
+    // Pulse on change
+    this.calendarDisplay.classList.add('pulse');
+    setTimeout(() => this.calendarDisplay.classList.remove('pulse'), 150);
   }
 
   public showUnlockNotification(message: string): void {
@@ -209,12 +246,38 @@ export class HUD {
     this.gameOverElement.style.display = 'none';
   }
 
+  public showAIEvent(name: string, description: string): void {
+    this.aiEventName.textContent = name;
+    this.aiEventDesc.textContent = `"${description}"`;
+    this.aiEventAlert.style.display = 'block';
+  }
+
+  public hideAIEvent(): void {
+    this.aiEventAlert.style.display = 'none';
+  }
+
+  public showAIEventComplete(name: string): void {
+    this.hideAIEvent();
+    const el = document.createElement('div');
+    el.className = 'unlock-notification';
+    el.style.borderColor = '#06b6d4';
+    el.style.color = '#06b6d4';
+    el.style.boxShadow = '0 0 40px rgba(6, 182, 212, 0.4)';
+    el.textContent = `Checked out ${name} — back to work!`;
+    document.body.appendChild(el);
+    setTimeout(() => {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }, 5000);
+  }
+
   public resetBudgetHUD(): void {
     this.updateBudget(10000);
     this.updateReview('good');
+    this.updateCalendar(0);
     this.hideGameOver();
     this.showQBRWarning(false);
     this.showRechargeIndicator(false);
+    this.hideAIEvent();
     this.attackCardContainer.innerHTML = '';
   }
 }

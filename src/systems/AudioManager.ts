@@ -328,6 +328,39 @@ export class AudioManager {
     osc.stop(now + 0.08);
   }
 
+  /** Meeting invite — short ascending chime (calendar notification ping) */
+  public playMeeting(): void {
+    if (!this.ctx || !this.canPlay('meeting')) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+
+    // Calendar notification ascending chime
+    const notes = [880, 1109, 1319]; // A5, C#6, E6
+    notes.forEach((freq, i) => {
+      const delay = i * 0.07;
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.18, now + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.15);
+      osc.connect(gain).connect(this.sfxGain);
+      osc.start(now + delay);
+      osc.stop(now + delay + 0.17);
+    });
+
+    // Soft "ding" tail
+    const ding = ctx.createOscillator();
+    ding.type = 'triangle';
+    ding.frequency.value = 1760;
+    const dingGain = ctx.createGain();
+    dingGain.gain.setValueAtTime(0.1, now + 0.21);
+    dingGain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+    ding.connect(dingGain).connect(this.sfxGain);
+    ding.start(now + 0.21);
+    ding.stop(now + 0.47);
+  }
+
   /** Budget stolen — descending coin pings (loss sound) */
   public playBudgetSteal(): void {
     if (!this.ctx || !this.canPlay('budgetSteal')) return;
@@ -545,6 +578,45 @@ export class AudioManager {
       osc.start(now + note.start);
       osc.stop(now + note.start + note.dur + 0.05);
     });
+  }
+
+  /** AI model event — breaking news alert (two-tone alarm chime) */
+  public playAIEvent(): void {
+    if (!this.ctx || !this.canPlay('aiEvent')) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+
+    // Two-tone alert chime (news bulletin style)
+    const tones = [
+      { freq: 880, start: 0, dur: 0.15 },
+      { freq: 1320, start: 0.15, dur: 0.25 },
+    ];
+    tones.forEach((tone) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'square';
+      osc.frequency.value = tone.freq;
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 2000;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.18, now + tone.start);
+      gain.gain.setValueAtTime(0.18, now + tone.start + tone.dur * 0.6);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + tone.start + tone.dur);
+      osc.connect(filter).connect(gain).connect(this.sfxGain);
+      osc.start(now + tone.start);
+      osc.stop(now + tone.start + tone.dur + 0.02);
+    });
+
+    // Attention ping
+    const ping = ctx.createOscillator();
+    ping.type = 'sine';
+    ping.frequency.value = 2640;
+    const pingGain = ctx.createGain();
+    pingGain.gain.setValueAtTime(0.1, now + 0.4);
+    pingGain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+    ping.connect(pingGain).connect(this.sfxGain);
+    ping.start(now + 0.4);
+    ping.stop(now + 0.62);
   }
 
   // ── Volume controls ───────────────────────────────────────
