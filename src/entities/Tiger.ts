@@ -1,11 +1,10 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { FirstPersonCamera } from '../core/Camera';
 import { InputManager } from '../core/InputManager';
 
 export class Tiger {
   public mesh: THREE.Group;
-  private body: THREE.Mesh;
-  private head: THREE.Mesh;
   private camera: FirstPersonCamera;
   private input: InputManager;
 
@@ -27,291 +26,108 @@ export class Tiger {
   // Pre-allocated scratch vector for movement calculations
   private readonly _moveDir = new THREE.Vector3();
 
-  // Animation
-  private walkCycle: number = 0;
+  // GLB animation
+  private mixer: THREE.AnimationMixer | null = null;
+  private animations: Map<string, THREE.AnimationAction> = new Map();
+  private currentAction: THREE.AnimationAction | null = null;
+  private modelLoaded: boolean = false;
 
   constructor(camera: FirstPersonCamera) {
     this.camera = camera;
     this.input = InputManager.getInstance();
     this.mesh = new THREE.Group();
 
-    // Materials
-    const orangeFur = new THREE.MeshStandardMaterial({
-      color: 0xe85d04,
-      roughness: 0.9,
-    });
-    const blackStripe = new THREE.MeshStandardMaterial({
-      color: 0x1a1a1a,
-      roughness: 0.9,
-    });
-    const whiteFur = new THREE.MeshStandardMaterial({
-      color: 0xfaf3e8,
-      roughness: 0.9,
-    });
-    const pinkNose = new THREE.MeshStandardMaterial({
-      color: 0xffb6c1,
-      roughness: 0.7,
-    });
+    this.loadModel();
+  }
 
-    // Main body - sleek and elongated
-    const bodyGeometry = new THREE.CapsuleGeometry(0.3, 2.0, 8, 16);
-    this.body = new THREE.Mesh(bodyGeometry, orangeFur);
-    this.body.rotation.x = Math.PI / 2;
-    this.body.scale.set(0.9, 1, 0.85);
-    this.body.position.set(0, 0.65, 0);
-    this.body.castShadow = true;
-    this.body.receiveShadow = true;
-    this.mesh.add(this.body);
+  private loadModel(): void {
+    const loader = new GLTFLoader();
+    loader.load('/models/Tiger.glb', (gltf) => {
+      const model = gltf.scene;
 
-    // White belly
-    const bellyGeometry = new THREE.CapsuleGeometry(0.22, 1.6, 8, 16);
-    const belly = new THREE.Mesh(bellyGeometry, whiteFur);
-    belly.rotation.x = Math.PI / 2;
-    belly.position.set(0, 0.5, 0);
-    this.mesh.add(belly);
+      // Measure the model's bounding box to auto-scale
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
 
-    // Body stripes - curved over the back
-    const stripePositions = [-0.7, -0.35, 0, 0.35, 0.7];
-    stripePositions.forEach((zPos, i) => {
-      // Top stripe
-      const stripeGeo = new THREE.BoxGeometry(0.06, 0.18, 0.4);
-      const stripe = new THREE.Mesh(stripeGeo, blackStripe);
-      stripe.position.set(0, 0.88, zPos);
-      stripe.rotation.x = (i % 2 === 0) ? 0.15 : -0.15;
-      this.mesh.add(stripe);
+      // Target: roughly 2m long (matching the original procedural tiger)
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const targetSize = 2.0;
+      const scale = targetSize / maxDim;
+      model.scale.setScalar(scale);
 
-      // Left side stripe
-      const leftStripe = new THREE.Mesh(stripeGeo, blackStripe);
-      leftStripe.position.set(-0.25, 0.75, zPos + 0.05);
-      leftStripe.rotation.z = 0.5;
-      leftStripe.rotation.x = (i % 2 === 0) ? 0.1 : -0.1;
-      this.mesh.add(leftStripe);
+      // Center horizontally and put feet on the ground
+      model.position.set(
+        -center.x * scale,
+        -box.min.y * scale,
+        -center.z * scale
+      );
 
-      // Right side stripe
-      const rightStripe = new THREE.Mesh(stripeGeo, blackStripe);
-      rightStripe.position.set(0.25, 0.75, zPos - 0.05);
-      rightStripe.rotation.z = -0.5;
-      rightStripe.rotation.x = (i % 2 === 0) ? -0.1 : 0.1;
-      this.mesh.add(rightStripe);
-    });
+      // Enable shadows
+      model.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+        }
+      });
 
-    // Head - leaner
-    const headGeometry = new THREE.SphereGeometry(0.35, 16, 16);
-    this.head = new THREE.Mesh(headGeometry, orangeFur);
-    this.head.scale.set(0.9, 0.85, 1.1);
-    this.head.position.set(0, 0.78, 1.3);
-    this.head.castShadow = true;
-    this.mesh.add(this.head);
+      this.mesh.add(model);
+      this.modelLoaded = true;
 
-    // Snout/muzzle - white
-    const muzzleGeometry = new THREE.SphereGeometry(0.18, 12, 12);
-    const muzzle = new THREE.Mesh(muzzleGeometry, whiteFur);
-    muzzle.scale.set(0.9, 0.65, 0.8);
-    muzzle.position.set(0, 0.68, 1.58);
-    this.mesh.add(muzzle);
+      // Set up animations if present
+      if (gltf.animations.length > 0) {
+        this.mixer = new THREE.AnimationMixer(model);
 
-    // Nose
-    const noseGeometry = new THREE.SphereGeometry(0.05, 8, 8);
-    const nose = new THREE.Mesh(noseGeometry, pinkNose);
-    nose.position.set(0, 0.72, 1.74);
-    this.mesh.add(nose);
+        for (const clip of gltf.animations) {
+          const action = this.mixer.clipAction(clip);
+          const name = clip.name.toLowerCase();
+          this.animations.set(name, action);
+        }
 
-    // Head stripes - forehead
-    const foreheadStripe1 = new THREE.Mesh(
-      new THREE.BoxGeometry(0.04, 0.12, 0.07),
-      blackStripe
-    );
-    foreheadStripe1.position.set(-0.1, 0.97, 1.42);
-    foreheadStripe1.rotation.x = -0.3;
-    this.mesh.add(foreheadStripe1);
-
-    const foreheadStripe2 = new THREE.Mesh(
-      new THREE.BoxGeometry(0.04, 0.12, 0.07),
-      blackStripe
-    );
-    foreheadStripe2.position.set(0.1, 0.97, 1.42);
-    foreheadStripe2.rotation.x = -0.3;
-    this.mesh.add(foreheadStripe2);
-
-    // Cheek stripes
-    const cheekStripeGeo = new THREE.BoxGeometry(0.03, 0.1, 0.05);
-    [-1, 1].forEach(side => {
-      for (let i = 0; i < 3; i++) {
-        const cheekStripe = new THREE.Mesh(cheekStripeGeo, blackStripe);
-        cheekStripe.position.set(
-          side * (0.27 + i * 0.025),
-          0.78 - i * 0.07,
-          1.42 - i * 0.05
-        );
-        cheekStripe.rotation.z = side * 0.3;
-        this.mesh.add(cheekStripe);
+        // Try to play idle animation by default
+        this.playAnimation('idle') ||
+          this.playAnimation('stand') ||
+          this.playFirstAnimation();
       }
+
+      console.log(
+        `Tiger model loaded: ${size.x.toFixed(1)}x${size.y.toFixed(1)}x${size.z.toFixed(1)} scaled to ${scale.toFixed(2)}`,
+        gltf.animations.length > 0
+          ? `| Animations: ${gltf.animations.map(a => a.name).join(', ')}`
+          : '| No animations'
+      );
     });
+  }
 
-    // Ears - triangular with black backs
-    const earShape = new THREE.Shape();
-    earShape.moveTo(0, 0);
-    earShape.lineTo(0.1, 0.2);
-    earShape.lineTo(-0.1, 0.2);
-    earShape.lineTo(0, 0);
-    const earGeometry = new THREE.ExtrudeGeometry(earShape, { depth: 0.05, bevelEnabled: false });
-
-    const leftEar = new THREE.Mesh(earGeometry, orangeFur);
-    leftEar.position.set(-0.18, 1.07, 1.22);
-    leftEar.rotation.x = -0.3;
-    this.mesh.add(leftEar);
-
-    const leftEarInner = new THREE.Mesh(earGeometry, blackStripe);
-    leftEarInner.scale.set(0.6, 0.6, 0.5);
-    leftEarInner.position.set(-0.18, 1.1, 1.24);
-    leftEarInner.rotation.x = -0.3;
-    this.mesh.add(leftEarInner);
-
-    const rightEar = new THREE.Mesh(earGeometry, orangeFur);
-    rightEar.position.set(0.18, 1.07, 1.22);
-    rightEar.rotation.x = -0.3;
-    this.mesh.add(rightEar);
-
-    const rightEarInner = new THREE.Mesh(earGeometry, blackStripe);
-    rightEarInner.scale.set(0.6, 0.6, 0.5);
-    rightEarInner.position.set(0.18, 1.1, 1.24);
-    rightEarInner.rotation.x = -0.3;
-    this.mesh.add(rightEarInner);
-
-    // Eyes - amber/yellow with black pupils
-    const eyeGeometry = new THREE.SphereGeometry(0.08, 12, 12);
-    const eyeMaterial = new THREE.MeshStandardMaterial({
-      color: 0xffc107,
-      emissive: 0xffc107,
-      emissiveIntensity: 0.1,
-    });
-
-    const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-    leftEye.position.set(-0.13, 0.84, 1.56);
-    this.mesh.add(leftEye);
-
-    const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
-    rightEye.position.set(0.13, 0.84, 1.56);
-    this.mesh.add(rightEye);
-
-    // Pupils - vertical slits
-    const pupilGeometry = new THREE.SphereGeometry(0.04, 8, 8);
-    const pupilMaterial = new THREE.MeshStandardMaterial({ color: 0x000000 });
-
-    const leftPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
-    leftPupil.scale.set(0.5, 1.2, 1);
-    leftPupil.position.set(-0.13, 0.84, 1.63);
-    this.mesh.add(leftPupil);
-
-    const rightPupil = new THREE.Mesh(pupilGeometry, pupilMaterial);
-    rightPupil.scale.set(0.5, 1.2, 1);
-    rightPupil.position.set(0.13, 0.84, 1.63);
-    this.mesh.add(rightPupil);
-
-    // Whisker dots
-    const whiskerDotGeo = new THREE.SphereGeometry(0.012, 6, 6);
-    [-1, 1].forEach(side => {
-      for (let row = 0; row < 2; row++) {
-        for (let col = 0; col < 3; col++) {
-          const dot = new THREE.Mesh(whiskerDotGeo, blackStripe);
-          dot.position.set(
-            side * (0.08 + col * 0.035),
-            0.65 - row * 0.035,
-            1.66
-          );
-          this.mesh.add(dot);
+  private playAnimation(name: string): boolean {
+    // Try exact match first, then partial match
+    let action = this.animations.get(name);
+    if (!action) {
+      for (const [key, a] of this.animations) {
+        if (key.includes(name)) {
+          action = a;
+          break;
         }
       }
-    });
-
-    // Legs with stripes
-    const createLeg = (x: number, z: number): THREE.Group => {
-      const leg = new THREE.Group();
-
-      // Upper leg
-      const upperLeg = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.09, 0.3, 6, 12),
-        orangeFur
-      );
-      upperLeg.position.y = 0.35;
-      upperLeg.castShadow = true;
-      leg.add(upperLeg);
-
-      // Lower leg / paw - white
-      const paw = new THREE.Mesh(
-        new THREE.CapsuleGeometry(0.07, 0.15, 6, 12),
-        whiteFur
-      );
-      paw.position.y = 0.1;
-      paw.castShadow = true;
-      leg.add(paw);
-
-      // Leg stripes
-      for (let i = 0; i < 2; i++) {
-        const legStripe = new THREE.Mesh(
-          new THREE.BoxGeometry(0.19, 0.025, 0.06),
-          blackStripe
-        );
-        legStripe.position.set(0, 0.4 + i * 0.12, 0);
-        leg.add(legStripe);
-      }
-
-      leg.position.set(x, 0, z);
-      return leg;
-    };
-
-    const frontLeftLeg = createLeg(-0.3, 0.8);
-    const frontRightLeg = createLeg(0.3, 0.8);
-    const backLeftLeg = createLeg(-0.3, -0.8);
-    const backRightLeg = createLeg(0.3, -0.8);
-
-    this.mesh.add(frontLeftLeg);
-    this.mesh.add(frontRightLeg);
-    this.mesh.add(backLeftLeg);
-    this.mesh.add(backRightLeg);
-
-    // Tail - long with stripes and white tip
-    const tailGroup = new THREE.Group();
-
-    const tailBase = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.055, 1.0, 6, 12),
-      orangeFur
-    );
-    tailBase.rotation.x = Math.PI / 2 + 0.5;
-    tailBase.position.set(0, 0.3, -0.6);
-    tailGroup.add(tailBase);
-
-    // Tail stripes
-    for (let i = 0; i < 5; i++) {
-      const tailStripe = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.06, 0.06, 0.05, 8),
-        blackStripe
-      );
-      tailStripe.rotation.x = Math.PI / 2 + 0.5;
-      const t = i / 5;
-      tailStripe.position.set(0, 0.35 + t * 0.4, -0.65 - t * 0.8);
-      tailGroup.add(tailStripe);
     }
+    if (!action) return false;
 
-    // White tail tip
-    const tailTip = new THREE.Mesh(
-      new THREE.SphereGeometry(0.065, 8, 8),
-      whiteFur
-    );
-    tailTip.position.set(0, 0.8, -1.45);
-    tailGroup.add(tailTip);
+    if (this.currentAction === action) return true;
 
-    tailGroup.position.set(0, 0.4, -0.4);
-    this.mesh.add(tailGroup);
+    if (this.currentAction) {
+      this.currentAction.fadeOut(0.3);
+    }
+    action.reset().fadeIn(0.3).play();
+    this.currentAction = action;
+    return true;
+  }
 
-    // Store references for animation
-    (this.mesh as any).legs = {
-      frontLeft: frontLeftLeg,
-      frontRight: frontRightLeg,
-      backLeft: backLeftLeg,
-      backRight: backRightLeg,
-    };
-    (this.mesh as any).tail = tailGroup;
+  private playFirstAnimation(): boolean {
+    const first = this.animations.values().next().value;
+    if (!first) return false;
+    first.reset().play();
+    this.currentAction = first;
+    return true;
   }
 
   public update(deltaTime: number): void {
@@ -333,8 +149,10 @@ export class Tiger {
       if (this.input.left) moveDirection.sub(right);
     }
 
+    const isMoving = moveDirection.lengthSq() > 0;
+
     // Apply movement
-    if (moveDirection.lengthSq() > 0) {
+    if (isMoving) {
       moveDirection.normalize();
 
       // Accelerate
@@ -357,15 +175,31 @@ export class Tiger {
         10 * deltaTime
       );
 
-      // Animate legs
-      this.animateWalk(deltaTime, isSprinting);
+      // Play walk/run animation
+      if (this.modelLoaded) {
+        if (isSprinting) {
+          this.playAnimation('run') ||
+            this.playAnimation('gallop') ||
+            this.playAnimation('walk');
+        } else {
+          this.playAnimation('walk') ||
+            this.playAnimation('run');
+        }
+        // Speed up animation when sprinting
+        if (this.currentAction) {
+          this.currentAction.timeScale = isSprinting ? 1.5 : 1.0;
+        }
+      }
     } else {
       // Decelerate
       this.velocity.x = THREE.MathUtils.lerp(this.velocity.x, 0, this.DECELERATION * deltaTime);
       this.velocity.z = THREE.MathUtils.lerp(this.velocity.z, 0, this.DECELERATION * deltaTime);
 
-      // Reset leg positions
-      this.resetLegs();
+      // Play idle animation
+      if (this.modelLoaded) {
+        this.playAnimation('idle') ||
+          this.playAnimation('stand');
+      }
     }
 
     // Jump
@@ -401,33 +235,11 @@ export class Tiger {
 
     // Update head bob
     this.camera.updateHeadBob(this.input.anyMovement, isSprinting, deltaTime);
-  }
 
-  private animateWalk(deltaTime: number, isSprinting: boolean): void {
-    const legs = (this.mesh as any).legs;
-    const tail = (this.mesh as any).tail;
-
-    const speed = isSprinting ? 15 : 10;
-    const amplitude = isSprinting ? 0.3 : 0.2;
-
-    this.walkCycle += deltaTime * speed;
-
-    // Animate legs in walking pattern (diagonal pairs)
-    legs.frontLeft.position.y = 0.3 + Math.sin(this.walkCycle) * amplitude;
-    legs.backRight.position.y = 0.3 + Math.sin(this.walkCycle) * amplitude;
-    legs.frontRight.position.y = 0.3 + Math.sin(this.walkCycle + Math.PI) * amplitude;
-    legs.backLeft.position.y = 0.3 + Math.sin(this.walkCycle + Math.PI) * amplitude;
-
-    // Animate tail
-    tail.rotation.y = Math.sin(this.walkCycle * 0.5) * 0.3;
-  }
-
-  private resetLegs(): void {
-    const legs = (this.mesh as any).legs;
-    legs.frontLeft.position.y = THREE.MathUtils.lerp(legs.frontLeft.position.y, 0.3, 0.1);
-    legs.frontRight.position.y = THREE.MathUtils.lerp(legs.frontRight.position.y, 0.3, 0.1);
-    legs.backLeft.position.y = THREE.MathUtils.lerp(legs.backLeft.position.y, 0.3, 0.1);
-    legs.backRight.position.y = THREE.MathUtils.lerp(legs.backRight.position.y, 0.3, 0.1);
+    // Update animation mixer
+    if (this.mixer) {
+      this.mixer.update(deltaTime);
+    }
   }
 
   public setPosition(x: number, y: number, z: number): void {

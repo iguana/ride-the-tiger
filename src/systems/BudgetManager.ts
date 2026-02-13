@@ -53,11 +53,13 @@ export class BudgetManager {
   private budget: number = 10000;
   private reviewLevel: ReviewLevel = 'good';
   private rechargeCooldown: number = 0;
-  private readonly RECHARGE_COOLDOWN = 15;
-  private readonly RECHARGE_AMOUNT = 3000;
+  private readonly RECHARGE_COOLDOWN = 20;
+  private readonly RECHARGE_AMOUNT = 2000;
 
   private calendarSlots: number = 0;
   private readonly MAX_CALENDAR = 8;
+  private calendarDecayTimer: number = 0;
+  private readonly CALENDAR_DECAY_INTERVAL = 45;
 
   private onExpense: ((amount: number, attack: AttackItem) => void) | null = null;
   private onReviewChange: ((level: ReviewLevel, attack: AttackItem) => void) | null = null;
@@ -176,11 +178,60 @@ export class BudgetManager {
     }
   }
 
+  public addKillReward(): void {
+    this.budget += 100;
+    this.onBudgetChange?.(this.budget);
+  }
+
+  public updateCalendarDecay(deltaTime: number): void {
+    if (this.calendarSlots <= 0) return;
+    this.calendarDecayTimer += deltaTime;
+    if (this.calendarDecayTimer >= this.CALENDAR_DECAY_INTERVAL) {
+      this.calendarDecayTimer = 0;
+      this.calendarSlots--;
+      this.onCalendarChange?.(this.calendarSlots);
+    }
+  }
+
+  public applyQBROverhead(): void {
+    this.budget -= 500;
+    this.onBudgetChange?.(this.budget);
+  }
+
+  public applyKillMilestone(killCount: number): void {
+    if (killCount % 3 === 0) {
+      // Every 3 kills: clear 1 calendar slot
+      if (this.calendarSlots > 0) {
+        this.calendarSlots--;
+        this.onCalendarChange?.(this.calendarSlots);
+      }
+    }
+    if (killCount % 5 === 0) {
+      // Every 5 kills: step review back one level (not all the way to good)
+      const idx = REVIEW_ORDER.indexOf(this.reviewLevel);
+      if (idx > 0) {
+        this.reviewLevel = REVIEW_ORDER[idx - 1];
+        // Use first HR attack as placeholder for the callback
+        this.onReviewChange?.(this.reviewLevel, HR_ATTACKS[0]);
+      }
+    }
+    if (killCount % 10 === 0) {
+      // Every 10 kills: full reset + $1000 bonus
+      this.reviewLevel = 'good';
+      this.calendarSlots = 0;
+      this.budget += 1000;
+      this.onReviewChange?.(this.reviewLevel, HR_ATTACKS[0]);
+      this.onCalendarChange?.(this.calendarSlots);
+      this.onBudgetChange?.(this.budget);
+    }
+  }
+
   public reset(): void {
     this.budget = 10000;
     this.reviewLevel = 'good';
     this.rechargeCooldown = 0;
     this.calendarSlots = 0;
+    this.calendarDecayTimer = 0;
     this.onBudgetChange?.(this.budget);
     this.onReviewChange?.(this.reviewLevel, HR_ATTACKS[0]);
     this.onCalendarChange?.(this.calendarSlots);

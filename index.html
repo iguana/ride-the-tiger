@@ -571,6 +571,91 @@
         100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
       }
 
+      /* Damage Vignette */
+      #damage-vignette {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 90;
+        opacity: 0;
+        transition: opacity 0.05s;
+        box-shadow: inset 0 0 80px 30px rgba(255, 0, 0, 0.6);
+      }
+      #damage-vignette.flash-green {
+        box-shadow: inset 0 0 80px 30px rgba(0, 255, 0, 0.5);
+      }
+      #damage-vignette.flash-purple {
+        box-shadow: inset 0 0 80px 30px rgba(153, 0, 255, 0.5);
+      }
+      #damage-vignette.flash-blue {
+        box-shadow: inset 0 0 80px 30px rgba(59, 130, 246, 0.5);
+      }
+
+      /* Minimap */
+      #minimap-container {
+        position: absolute;
+        bottom: 20px;
+        left: 20px;
+        width: 160px;
+        height: 160px;
+        background: rgba(0, 0, 0, 0.7);
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-radius: 8px;
+        overflow: hidden;
+        z-index: 110;
+      }
+      #minimap-canvas {
+        width: 100%;
+        height: 100%;
+      }
+
+      /* Objective Waypoint */
+      #objective-waypoint {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 0;
+        height: 0;
+        z-index: 95;
+        pointer-events: none;
+        display: none;
+      }
+      #waypoint-arrow {
+        position: absolute;
+        width: 20px;
+        height: 20px;
+        border-left: 3px solid #ff6b35;
+        border-top: 3px solid #ff6b35;
+        opacity: 0.7;
+      }
+      #waypoint-distance {
+        position: absolute;
+        color: #ff6b35;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-size: 0.7rem;
+        font-weight: bold;
+        white-space: nowrap;
+        opacity: 0.7;
+      }
+
+      /* Difficulty Tier */
+      #difficulty-display {
+        position: absolute;
+        top: 270px;
+        right: 20px;
+        background: rgba(0, 0, 0, 0.7);
+        color: #ff6b35;
+        padding: 10px 18px;
+        border-radius: 8px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-size: 0.9rem;
+        font-weight: bold;
+        border-left: 4px solid #ff6b35;
+      }
+
       /* AI Event Alert */
       #ai-event-alert {
         position: absolute;
@@ -651,6 +736,7 @@
       <div class="click-prompt">[ CLICK TO START ]</div>
       <div class="start-footer">
         <span>v1.0</span>
+        <span><a href="https://poly.pizza/m/5A3w06FXUup" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;opacity:0.7">Tiger by Poly by Google <a href="https://creativecommons.org/licenses/by/3.0/" target="_blank" rel="noopener" style="color:inherit">[CC-BY]</a> via <a href="https://poly.pizza/m/5A3w06FXUup" target="_blank" rel="noopener" style="color:inherit">Poly Pizza</a></span>
         <span>WASD + MOUSE</span>
       </div>
     </div>
@@ -664,7 +750,10 @@
       <div id="budget-display">Budget: $10,000</div>
       <div id="review-display">Review: Good</div>
       <div id="calendar-display">Calendar: 0/8</div>
+      <div id="difficulty-display">Tier: 1</div>
       <div id="crosshair"></div>
+      <div id="minimap-container"><canvas id="minimap-canvas" width="160" height="160"></canvas></div>
+      <div id="objective-waypoint"><div id="waypoint-arrow"></div><div id="waypoint-distance"></div></div>
       <div id="mission-complete">
         <h2>CHECKED IN!</h2>
         <p>Department visited!</p>
@@ -678,6 +767,7 @@
         <div class="ai-event-action">Go to CTO Office to check it out!</div>
       </div>
     </div>
+    <div id="damage-vignette"></div>
     <div id="expense-container"></div>
     <div id="attack-card-container"></div>
     <div id="game-over">

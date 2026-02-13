@@ -9,7 +9,7 @@ interface Enemy {
   targetPosition: THREE.Vector3;
   speed: number;
   health: number;
-  state: 'patrol' | 'dying' | 'stealing' | 'retreating' | 'reviewing' | 'scheduling';
+  state: 'patrol' | 'dying' | 'stealing' | 'retreating' | 'reviewing' | 'scheduling' | 'telegraphing';
   deathTimer: number;
   type: EnemyType;
   homePosition: THREE.Vector3;
@@ -17,6 +17,7 @@ interface Enemy {
   stolenAmount: number;
   hasChart: boolean;
   chartMesh: THREE.Group | null;
+  telegraphType: EnemyType | null;
 }
 
 interface DeathParticle {
@@ -84,8 +85,6 @@ export class EnemyManager {
   private onKillCallback: ((count: number) => void) | null = null;
   private onPlayerDamageCallback: ((type: EnemyType) => void) | null = null;
 
-  private readonly MAX_ENEMIES = 24;
-  private readonly SPAWN_INTERVAL = 3;
   private readonly ENEMY_RADIUS = 0.6;
   private readonly ENEMY_HALF_SIZE = new THREE.Vector3(0.4, 0.9, 0.4);
   private readonly BLAST_RADIUS = 4;
@@ -93,6 +92,12 @@ export class EnemyManager {
   private readonly ATTACK_RANGE = 1.8;
   private readonly ATTACK_COOLDOWN = 4;
   private readonly FLASH_DURATION = 1.0;
+
+  // Difficulty tier system
+  private difficultyTier: number = 1;
+  private speedMultiplier: number = 1.0;
+  private currentMaxEnemies: number = 20;
+  private currentSpawnInterval: number = 3.0;
 
   // Pre-allocated scratch objects to avoid per-frame allocation
   private readonly _toHome = new THREE.Vector3();
@@ -133,8 +138,20 @@ export class EnemyManager {
     this.onPlayerDamageCallback = callback;
   }
 
+  public setDifficultyTier(tier: number): void {
+    this.difficultyTier = tier;
+    switch (tier) {
+      case 1: this.speedMultiplier = 1.0; this.currentMaxEnemies = 20; this.currentSpawnInterval = 3.0; break;
+      case 2: this.speedMultiplier = 1.1; this.currentMaxEnemies = 24; this.currentSpawnInterval = 2.5; break;
+      case 3: this.speedMultiplier = 1.2; this.currentMaxEnemies = 28; this.currentSpawnInterval = 2.0; break;
+      case 4: this.speedMultiplier = 1.3; this.currentMaxEnemies = 32; this.currentSpawnInterval = 1.5; break;
+      case 5: this.speedMultiplier = 1.4; this.currentMaxEnemies = 36; this.currentSpawnInterval = 1.2; break;
+      default: break;
+    }
+  }
+
   private spawnEnemy(): void {
-    if (this.enemies.length >= this.MAX_ENEMIES) return;
+    if (this.enemies.length >= this.currentMaxEnemies) return;
     if (this.spawnZones.length === 0) return;
 
     const zone = this.spawnZones[Math.floor(Math.random() * this.spawnZones.length)];
@@ -153,7 +170,7 @@ export class EnemyManager {
       mesh,
       position: spawnPos.clone(),
       targetPosition: spawnPos.clone(),
-      speed: config.speedMin + Math.random() * (config.speedMax - config.speedMin),
+      speed: (config.speedMin + Math.random() * (config.speedMax - config.speedMin)) * this.speedMultiplier,
       health: config.health,
       state: 'patrol',
       deathTimer: 0,
@@ -163,6 +180,7 @@ export class EnemyManager {
       stolenAmount: 0,
       hasChart: false,
       chartMesh: null,
+      telegraphType: null,
     });
   }
 
@@ -576,7 +594,7 @@ export class EnemyManager {
     this.elapsedTime += deltaTime;
 
     this.spawnTimer += deltaTime;
-    if (this.spawnTimer >= this.SPAWN_INTERVAL) {
+    if (this.spawnTimer >= this.currentSpawnInterval) {
       this.spawnTimer = 0;
       this.spawnEnemy();
     }
@@ -598,25 +616,11 @@ export class EnemyManager {
 
         // Check if enemies should attack
         if (distToPlayer <= this.ATTACK_RANGE && enemy.attackCooldown <= 0) {
-          if (enemy.type === 'financeGoblin') {
-            enemy.state = 'stealing';
-            enemy.deathTimer = 0; // reuse as flash timer
-            this.onPlayerDamageCallback?.(enemy.type);
-            this.flashEnemy(enemy, 0x00ff00);
-            continue;
-          } else if (enemy.type === 'hrEnforcer') {
-            enemy.state = 'reviewing';
-            enemy.deathTimer = 0;
-            this.onPlayerDamageCallback?.(enemy.type);
-            this.flashEnemy(enemy, 0x9900ff);
-            continue;
-          } else if (enemy.type === 'manager' || enemy.type === 'salesBro' || enemy.type === 'itZombie' || enemy.type === 'executive') {
-            enemy.state = 'scheduling';
-            enemy.deathTimer = 0;
-            this.onPlayerDamageCallback?.(enemy.type);
-            this.flashEnemy(enemy, 0x3b82f6);
-            continue;
-          }
+          enemy.state = 'telegraphing';
+          enemy.deathTimer = 0;
+          enemy.telegraphType = enemy.type;
+          // Visual telegraph - enemy raises up slightly
+          continue;
         }
 
         if (distToPlayer > 1.2) {
@@ -666,6 +670,34 @@ export class EnemyManager {
         if (enemy.deathTimer >= this.FLASH_DURATION) {
           enemy.state = 'retreating';
           enemy.attackCooldown = this.ATTACK_COOLDOWN;
+        }
+
+      } else if (enemy.state === 'telegraphing') {
+        enemy.deathTimer += deltaTime;
+        // Bob up during telegraph (wind-up)
+        enemy.mesh.position.y = 0.15 * Math.sin(enemy.deathTimer * 12);
+
+        if (enemy.deathTimer >= 0.5) {
+          // Now actually execute the attack
+          if (enemy.type === 'financeGoblin') {
+            enemy.state = 'stealing';
+            enemy.deathTimer = 0;
+            this.onPlayerDamageCallback?.(enemy.type);
+            this.flashEnemy(enemy, 0x00ff00);
+          } else if (enemy.type === 'hrEnforcer') {
+            enemy.state = 'reviewing';
+            enemy.deathTimer = 0;
+            this.onPlayerDamageCallback?.(enemy.type);
+            this.flashEnemy(enemy, 0x9900ff);
+          } else {
+            enemy.state = 'scheduling';
+            enemy.deathTimer = 0;
+            this.onPlayerDamageCallback?.(enemy.type);
+            this.flashEnemy(enemy, 0x3b82f6);
+            if (enemy.type === 'executive') {
+              this.buffNearbyEnemies(enemy);
+            }
+          }
         }
 
       } else if (enemy.state === 'retreating') {
@@ -896,6 +928,26 @@ export class EnemyManager {
     }, 120);
   }
 
+  // ─── Executive Buff Aura ───────────────────────────────────────────
+
+  private buffNearbyEnemies(source: Enemy): void {
+    for (const enemy of this.enemies) {
+      if (enemy === source || enemy.state === 'dying') continue;
+      const dist = source.position.distanceTo(enemy.position);
+      if (dist < 8) {
+        // Temporary speed boost - store original speed and boost it
+        const originalSpeed = enemy.speed;
+        enemy.speed = originalSpeed * 1.5;
+        // Reset after 10 seconds
+        setTimeout(() => {
+          if (enemy.state !== 'dying') {
+            enemy.speed = originalSpeed;
+          }
+        }, 10000);
+      }
+    }
+  }
+
   // ─── Flash + QBR ─────────────────────────────────────────────────
 
   private static readonly GREEN_FLASH_MAT = new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 0.5 });
@@ -959,6 +1011,16 @@ export class EnemyManager {
 
   public getKillCount(): number {
     return this.killCount;
+  }
+
+  public getDifficultyTier(): number {
+    return this.difficultyTier;
+  }
+
+  public getEnemyPositions(): { x: number; z: number; type: string }[] {
+    return this.enemies
+      .filter(e => e.state !== 'dying')
+      .map(e => ({ x: e.position.x, z: e.position.z, type: e.type }));
   }
 
   public clear(): void {

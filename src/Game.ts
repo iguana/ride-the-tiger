@@ -58,7 +58,7 @@ export class Game {
 
   // AI model event system
   private aiEventTimer: number = 0;
-  private readonly AI_EVENT_INTERVAL = 120;
+  private readonly AI_EVENT_INTERVAL = 90;
   private aiEventActive: boolean = false;
   private aiEventModelName: string = '';
   private readonly CTO_POSITION = new THREE.Vector3(40, 0, -45);
@@ -76,6 +76,10 @@ export class Game {
     { name: 'Perplexity Sovereign', description: 'It Googles stuff but with confidence' },
     { name: 'Cohere Command X', description: 'Enterprise-ready. Whatever that means' },
   ];
+
+  // Difficulty tier timer
+  private difficultyTimer: number = 0;
+  private readonly DIFFICULTY_INTERVAL = 90;
 
   // Finance recharge zone
   private readonly FINANCE_POSITION = new THREE.Vector3(25, 0, 50);
@@ -119,25 +123,28 @@ export class Game {
     this.enemyManager.setOnKill((count) => {
       this.hud.updateKillCount(count);
       this.audio.playEnemyDeath();
-      if (count % 5 === 0) {
-        this.budgetManager.resetReview();
-        this.budgetManager.clearCalendar();
-      }
+      this.budgetManager.addKillReward();
+      this.budgetManager.applyKillMilestone(count);
     });
 
-    // Wire enemy damage -> budget manager
+    // Wire enemy damage -> budget manager + feedback
     this.enemyManager.setOnPlayerDamage((type) => {
       if (this.gameOver) return;
+      this.audio.playDamageHit();
+      this.camera.applyShake(0.15);
       if (type === 'financeGoblin') {
         this.budgetManager.stealBudget();
         this.audio.playBudgetSteal();
+        this.hud.flashDamageVignette('finance');
       } else if (type === 'hrEnforcer') {
         this.budgetManager.escalateReview();
         this.audio.playReview();
+        this.hud.flashDamageVignette('hr');
       } else {
         // manager, salesBro, itZombie, executive → schedule meeting
         this.budgetManager.scheduleMeeting();
         this.audio.playMeeting();
+        this.hud.flashDamageVignette('meeting');
       }
     });
 
@@ -266,6 +273,7 @@ export class Game {
     const direction = this.camera.getDirection();
     this.phoneShooter.shoot(origin, direction);
     this.audio.playShoot();
+    this.camera.applyRecoil();
   }
 
   private start(): void {
@@ -280,6 +288,10 @@ export class Game {
 
     // Init audio on first user gesture
     this.audio.init();
+    this.audio.playAmbient();
+
+    // Init difficulty display
+    this.hud.updateDifficulty(1);
 
     this.isRunning = true;
     this.container.requestPointerLock();
@@ -299,6 +311,8 @@ export class Game {
     if (this.gameOver) return;
     this.gameOver = true;
     this.audio.playFired();
+    this.audio.stopAmbient();
+    this.camera.applyShake(0.4);
     this.hud.showGameOver(reason);
     document.exitPointerLock();
   }
@@ -324,6 +338,14 @@ export class Game {
     // Reset AI event
     this.aiEventTimer = 0;
     this.aiEventActive = false;
+
+    // Reset difficulty
+    this.difficultyTimer = 0;
+    this.enemyManager.setDifficultyTier(1);
+    this.hud.updateDifficulty(1);
+
+    // Restart ambient audio
+    this.audio.playAmbient();
 
     // Teardown and rebuild level
     this.scene.scene.remove(this.callCenter.group);
@@ -419,8 +441,15 @@ export class Game {
     // Update enemies
     this.enemyManager.update(deltaTime, this.tiger.getPosition());
 
-    // Update budget cooldowns
+    // Update budget cooldowns + calendar auto-decay
     this.budgetManager.updateCooldown(deltaTime);
+    this.budgetManager.updateCalendarDecay(deltaTime);
+
+    // Camera effects (shake + recoil)
+    this.camera.updateEffects(deltaTime);
+
+    // Difficulty ramp
+    this.updateDifficulty(deltaTime);
 
     // Update AI companion animations
     this.companion.update(deltaTime);
@@ -433,6 +462,12 @@ export class Game {
 
     // AI model event system
     this.updateAIEvent(deltaTime);
+
+    // Minimap
+    this.updateMinimap();
+
+    // Objective waypoint
+    this.updateWaypoint();
 
     // Check warp door proximity
     if (this.warpCooldown > 0) {
@@ -492,6 +527,8 @@ export class Game {
       if (!this.qbrHitPlayer && this.qbrPlaneZ >= playerZ) {
         this.qbrHitPlayer = true;
         this.audio.playQBR();
+        this.camera.applyShake(0.25);
+        this.budgetManager.applyQBROverhead();
         this.budgetManager.checkQBR();
       }
 
@@ -574,6 +611,55 @@ export class Game {
         this.audio.playAIEvent();
       }
     }
+  }
+
+  private updateDifficulty(deltaTime: number): void {
+    this.difficultyTimer += deltaTime;
+    if (this.difficultyTimer >= this.DIFFICULTY_INTERVAL) {
+      this.difficultyTimer = 0;
+      const currentTier = this.enemyManager.getDifficultyTier();
+      if (currentTier < 5) {
+        const newTier = currentTier + 1;
+        this.enemyManager.setDifficultyTier(newTier);
+        this.hud.updateDifficulty(newTier);
+      }
+    }
+  }
+
+  private updateMinimap(): void {
+    const playerPos = this.tiger.getPosition();
+    const forward = this.camera.getForward();
+    const rotation = Math.atan2(forward.x, forward.z);
+
+    // Gather department positions from mission manager
+    const missions = this.missionManager.getMissions();
+    const departments = missions.map(m => ({
+      x: m.targetPosition.x,
+      z: m.targetPosition.z,
+      id: m.id,
+    }));
+
+    const enemies = this.enemyManager.getEnemyPositions();
+
+    this.hud.updateMinimap(playerPos.x, playerPos.z, rotation, departments, enemies);
+  }
+
+  private updateWaypoint(): void {
+    const mission = this.missionManager.getActiveMission();
+    if (!mission) {
+      this.hud.hideWaypoint();
+      return;
+    }
+
+    const playerPos = this.tiger.getPosition();
+    const forward = this.camera.getForward();
+    const yaw = Math.atan2(forward.x, forward.z);
+
+    this.hud.updateWaypoint(
+      playerPos.x, playerPos.z,
+      mission.targetPosition.x, mission.targetPosition.z,
+      yaw
+    );
   }
 
   private loadLevel(levelId: string): void {

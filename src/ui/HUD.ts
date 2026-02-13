@@ -35,8 +35,16 @@ export class HUD {
   private aiEventAlert: HTMLElement;
   private aiEventName: HTMLElement;
   private aiEventDesc: HTMLElement;
+  private damageVignette: HTMLElement;
+  private minimapCanvas: HTMLCanvasElement;
+  private minimapCtx: CanvasRenderingContext2D;
+  private waypointElement: HTMLElement;
+  private waypointArrow: HTMLElement;
+  private waypointDistance: HTMLElement;
+  private difficultyDisplay: HTMLElement;
 
   private readonly MAX_CALENDAR = 8;
+  private vignetteTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor() {
     this.hudElement = document.getElementById('hud')!;
@@ -56,6 +64,13 @@ export class HUD {
     this.aiEventAlert = document.getElementById('ai-event-alert')!;
     this.aiEventName = this.aiEventAlert.querySelector('.ai-event-name')!;
     this.aiEventDesc = this.aiEventAlert.querySelector('.ai-event-desc')!;
+    this.damageVignette = document.getElementById('damage-vignette')!;
+    this.minimapCanvas = document.getElementById('minimap-canvas') as HTMLCanvasElement;
+    this.minimapCtx = this.minimapCanvas.getContext('2d')!;
+    this.waypointElement = document.getElementById('objective-waypoint')!;
+    this.waypointArrow = document.getElementById('waypoint-arrow')!;
+    this.waypointDistance = document.getElementById('waypoint-distance')!;
+    this.difficultyDisplay = document.getElementById('difficulty-display')!;
   }
 
   public show(): void {
@@ -270,6 +285,160 @@ export class HUD {
     }, 5000);
   }
 
+  // ─── Damage Vignette ──────────────────────────────────────
+
+  public flashDamageVignette(type: 'finance' | 'hr' | 'meeting'): void {
+    // Clear any existing flash
+    if (this.vignetteTimer) clearTimeout(this.vignetteTimer);
+    this.damageVignette.className = '';
+
+    // Apply color class
+    if (type === 'finance') {
+      this.damageVignette.classList.add('flash-green');
+    } else if (type === 'hr') {
+      this.damageVignette.classList.add('flash-purple');
+    } else {
+      this.damageVignette.classList.add('flash-blue');
+    }
+
+    this.damageVignette.style.opacity = '1';
+    this.vignetteTimer = setTimeout(() => {
+      this.damageVignette.style.opacity = '0';
+    }, 200);
+  }
+
+  // ─── Minimap ──────────────────────────────────────────────
+
+  public updateMinimap(
+    playerX: number, playerZ: number, playerRotation: number,
+    departments: { x: number; z: number; id: string }[],
+    enemies: { x: number; z: number; type: string }[]
+  ): void {
+    const ctx = this.minimapCtx;
+    const w = 160;
+    const h = 160;
+    const scale = 1.2; // world units per pixel
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Background
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(0, 0, w, h);
+
+    const cx = w / 2;
+    const cy = h / 2;
+
+    // Draw departments as diamonds
+    for (const dept of departments) {
+      const dx = (dept.x - playerX) / scale;
+      const dz = (dept.z - playerZ) / scale;
+      // Rotate relative to player facing
+      const rx = dx * Math.cos(-playerRotation) - dz * Math.sin(-playerRotation);
+      const ry = dx * Math.sin(-playerRotation) + dz * Math.cos(-playerRotation);
+      const sx = cx + rx;
+      const sy = cy + ry;
+
+      if (sx < -5 || sx > w + 5 || sy < -5 || sy > h + 5) continue;
+
+      ctx.fillStyle = '#ff6b35';
+      ctx.save();
+      ctx.translate(sx, sy);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillRect(-3, -3, 6, 6);
+      ctx.restore();
+    }
+
+    // Draw enemies as small dots
+    const enemyColors: Record<string, string> = {
+      financeGoblin: '#4ade80',
+      hrEnforcer: '#a855f7',
+      manager: '#3b82f6',
+      salesBro: '#3b82f6',
+      itZombie: '#3b82f6',
+      executive: '#ffd700',
+    };
+    for (const e of enemies) {
+      const dx = (e.x - playerX) / scale;
+      const dz = (e.z - playerZ) / scale;
+      const rx = dx * Math.cos(-playerRotation) - dz * Math.sin(-playerRotation);
+      const ry = dx * Math.sin(-playerRotation) + dz * Math.cos(-playerRotation);
+      const sx = cx + rx;
+      const sy = cy + ry;
+
+      if (sx < 0 || sx > w || sy < 0 || sy > h) continue;
+
+      ctx.fillStyle = enemyColors[e.type] ?? '#ff4444';
+      ctx.fillRect(sx - 1.5, sy - 1.5, 3, 3);
+    }
+
+    // Draw player (center triangle pointing up)
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - 5);
+    ctx.lineTo(cx - 4, cy + 4);
+    ctx.lineTo(cx + 4, cy + 4);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // ─── Objective Waypoint ───────────────────────────────────
+
+  public updateWaypoint(
+    playerX: number, playerZ: number,
+    targetX: number, targetZ: number,
+    cameraYaw: number
+  ): void {
+    const dx = targetX - playerX;
+    const dz = targetZ - playerZ;
+    const dist = Math.sqrt(dx * dx + dz * dz);
+
+    if (dist < 4) {
+      this.waypointElement.style.display = 'none';
+      return;
+    }
+
+    // Angle from player to target in world space
+    const angleToTarget = Math.atan2(dx, dz);
+    // Relative angle (how far off-center the target is)
+    let relAngle = angleToTarget - cameraYaw;
+    // Normalize to [-PI, PI]
+    while (relAngle > Math.PI) relAngle -= 2 * Math.PI;
+    while (relAngle < -Math.PI) relAngle += 2 * Math.PI;
+
+    // Only show waypoint when target is roughly off-screen (outside ~45deg FOV)
+    if (Math.abs(relAngle) < 0.4) {
+      this.waypointElement.style.display = 'none';
+      return;
+    }
+
+    this.waypointElement.style.display = 'block';
+
+    // Position arrow at screen edge
+    const radius = 120;
+    const arrowX = Math.sin(relAngle) * radius;
+    const arrowY = -Math.cos(relAngle) * Math.min(radius, 80);
+
+    this.waypointArrow.style.transform = `translate(${arrowX}px, ${arrowY}px) rotate(${relAngle}rad)`;
+    this.waypointDistance.style.transform = `translate(${arrowX}px, ${arrowY + 20}px)`;
+    this.waypointDistance.textContent = `${Math.round(dist)}m`;
+  }
+
+  public hideWaypoint(): void {
+    this.waypointElement.style.display = 'none';
+  }
+
+  // ─── Difficulty Display ───────────────────────────────────
+
+  public updateDifficulty(tier: number): void {
+    const labels = ['', 'INTERN', 'ASSOCIATE', 'SENIOR', 'DIRECTOR', 'VP'];
+    this.difficultyDisplay.textContent = `Tier ${tier}: ${labels[tier] ?? ''}`;
+    // Color escalation
+    const colors = ['', '#4ade80', '#facc15', '#f97316', '#ef4444', '#ff0000'];
+    const color = colors[tier] ?? '#ff6b35';
+    this.difficultyDisplay.style.color = color;
+    this.difficultyDisplay.style.borderLeftColor = color;
+  }
+
   public resetBudgetHUD(): void {
     this.updateBudget(10000);
     this.updateReview('good');
@@ -278,6 +447,9 @@ export class HUD {
     this.showQBRWarning(false);
     this.showRechargeIndicator(false);
     this.hideAIEvent();
+    this.hideWaypoint();
+    this.updateDifficulty(1);
     this.attackCardContainer.innerHTML = '';
+    this.damageVignette.style.opacity = '0';
   }
 }

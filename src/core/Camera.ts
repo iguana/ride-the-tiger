@@ -19,6 +19,17 @@ export class FirstPersonCamera {
   private readonly _forward = new THREE.Vector3();
   private readonly _right = new THREE.Vector3();
 
+  // Shake system
+  private shakeIntensity: number = 0;
+  private shakeDecay: number = 8; // how fast shake dampens
+  private shakeOffsetX: number = 0;
+  private shakeOffsetY: number = 0;
+
+  // Recoil system
+  private recoilPitch: number = 0;
+  private readonly RECOIL_KICK = 0.035; // radians (~2 degrees)
+  private readonly RECOIL_RETURN_SPEED = 8;
+
   constructor() {
     this.camera = new THREE.PerspectiveCamera(
       75,
@@ -108,5 +119,57 @@ export class FirstPersonCamera {
 
   public get locked(): boolean {
     return this.isLocked;
+  }
+
+  public applyShake(intensity: number): void {
+    this.shakeIntensity = Math.max(this.shakeIntensity, intensity);
+  }
+
+  public applyRecoil(): void {
+    this.recoilPitch = this.RECOIL_KICK;
+  }
+
+  public updateEffects(deltaTime: number): void {
+    // Handle camera shake
+    if (this.shakeIntensity > 0.001) {
+      // Remove previous shake offset
+      this.camera.position.x -= this.shakeOffsetX;
+      this.camera.position.y -= this.shakeOffsetY;
+
+      // Generate new random shake offset
+      this.shakeOffsetX = (Math.random() - 0.5) * 2 * this.shakeIntensity;
+      this.shakeOffsetY = (Math.random() - 0.5) * 2 * this.shakeIntensity;
+
+      // Apply new shake offset
+      this.camera.position.x += this.shakeOffsetX;
+      this.camera.position.y += this.shakeOffsetY;
+
+      // Exponential decay
+      this.shakeIntensity *= Math.exp(-this.shakeDecay * deltaTime);
+    } else {
+      // Clear shake state when intensity is negligible
+      this.camera.position.x -= this.shakeOffsetX;
+      this.camera.position.y -= this.shakeOffsetY;
+      this.shakeIntensity = 0;
+      this.shakeOffsetX = 0;
+      this.shakeOffsetY = 0;
+    }
+
+    // Handle recoil
+    if (this.recoilPitch > 0.001) {
+      // Apply recoil (negative X = pitch up)
+      this.euler.setFromQuaternion(this.camera.quaternion);
+      this.euler.x -= this.recoilPitch;
+
+      // Clamp vertical look to prevent over-rotation
+      this.euler.x = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, this.euler.x));
+
+      this.camera.quaternion.setFromEuler(this.euler);
+
+      // Exponential decay
+      this.recoilPitch *= Math.exp(-this.RECOIL_RETURN_SPEED * deltaTime);
+    } else {
+      this.recoilPitch = 0;
+    }
   }
 }

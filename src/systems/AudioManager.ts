@@ -8,6 +8,11 @@ export class AudioManager {
   private masterGain!: GainNode;
   private sfxGain!: GainNode;
   private musicGain!: GainNode;
+  private ambientGain: GainNode | null = null;
+
+  // Ambient sound state
+  private ambientHum: OscillatorNode | null = null;
+  private ambientNoise: AudioBufferSourceNode | null = null;
 
   // Music state
   private tracks: string[] = [];
@@ -43,6 +48,10 @@ export class AudioManager {
     this.musicGain = this.ctx.createGain();
     this.musicGain.gain.value = 0.3;
     this.musicGain.connect(this.masterGain);
+
+    this.ambientGain = this.ctx.createGain();
+    this.ambientGain.gain.value = 0.04;
+    this.ambientGain.connect(this.masterGain);
 
     this.initNoiseBuffers();
     this.loadTrackList();
@@ -617,6 +626,84 @@ export class AudioManager {
     ping.connect(pingGain).connect(this.sfxGain);
     ping.start(now + 0.4);
     ping.stop(now + 0.62);
+  }
+
+  /** Damage hit — short impact when player takes damage */
+  public playDamageHit(): void {
+    if (!this.ctx || !this.canPlay('damageHit')) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+
+    // Low thud impact
+    const thud = ctx.createOscillator();
+    thud.type = 'sine';
+    thud.frequency.setValueAtTime(100, now);
+    thud.frequency.exponentialRampToValueAtTime(50, now + 0.1);
+    const thudGain = ctx.createGain();
+    thudGain.gain.setValueAtTime(0.3, now);
+    thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    thud.connect(thudGain).connect(this.sfxGain);
+    thud.start(now);
+    thud.stop(now + 0.1);
+
+    // Sharp noise burst
+    const noiseBuffer = this.createNoiseBuffer(0.08, (t) => (1 - t) * 0.4);
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 1200;
+    filter.Q.value = 2;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.setValueAtTime(0.25, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+    noise.connect(filter).connect(noiseGain).connect(this.sfxGain);
+    noise.start(now);
+    noise.stop(now + 0.08);
+  }
+
+  /** Ambient office sounds — looping background ambience */
+  public playAmbient(): void {
+    if (!this.ctx || !this.ambientGain) return;
+    // Early return if ambient is already playing
+    if (this.ambientHum !== null) return;
+
+    const ctx = this.ctx;
+
+    // HVAC hum
+    const hum = ctx.createOscillator();
+    hum.type = 'sine';
+    hum.frequency.value = 60;
+    const humGain = ctx.createGain();
+    humGain.gain.value = 0.03;
+    hum.connect(humGain).connect(this.ambientGain);
+    hum.start();
+    this.ambientHum = hum;
+
+    // Office ambience noise (3-second loop)
+    const noiseBuffer = this.createNoiseBuffer(3, () => 0.02);
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    noise.loop = true;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 400;
+    filter.Q.value = 0.5;
+    noise.connect(filter).connect(this.ambientGain);
+    noise.start();
+    this.ambientNoise = noise;
+  }
+
+  /** Stop ambient sounds */
+  public stopAmbient(): void {
+    if (this.ambientHum) {
+      this.ambientHum.stop();
+      this.ambientHum = null;
+    }
+    if (this.ambientNoise) {
+      this.ambientNoise.stop();
+      this.ambientNoise = null;
+    }
   }
 
   // ── Volume controls ───────────────────────────────────────
