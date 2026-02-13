@@ -561,8 +561,8 @@ export class Game {
     this.qbrPlaneZ = this.qbrStartZ;
     this.hud.showQBRWarning(false);
 
-    // Create translucent golden plane
-    const geometry = new THREE.PlaneGeometry(300, 20);
+    // Create translucent golden wall spanning the level width
+    const geometry = new THREE.PlaneGeometry(300, 30);
     const material = new THREE.MeshStandardMaterial({
       color: 0xffd700,
       emissive: 0xffd700,
@@ -572,8 +572,7 @@ export class Game {
       side: THREE.DoubleSide,
     });
     this.qbrPlane = new THREE.Mesh(geometry, material);
-    this.qbrPlane.position.set(0, 5, this.qbrStartZ);
-    this.qbrPlane.rotation.y = Math.PI / 2;
+    this.qbrPlane.position.set(0, 15, this.qbrStartZ);
     this.scene.scene.add(this.qbrPlane);
   }
 
