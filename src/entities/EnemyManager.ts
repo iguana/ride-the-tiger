@@ -9,9 +9,14 @@ interface Enemy {
   targetPosition: THREE.Vector3;
   speed: number;
   health: number;
-  state: 'patrol' | 'dying';
+  state: 'patrol' | 'dying' | 'stealing' | 'retreating' | 'reviewing';
   deathTimer: number;
   type: EnemyType;
+  homePosition: THREE.Vector3;
+  attackCooldown: number;
+  stolenAmount: number;
+  hasChart: boolean;
+  chartMesh: THREE.Group | null;
 }
 
 interface DeathParticle {
@@ -77,6 +82,7 @@ export class EnemyManager {
   private spawnTimer: number = 0;
   private killCount: number = 0;
   private onKillCallback: ((count: number) => void) | null = null;
+  private onPlayerDamageCallback: ((type: EnemyType) => void) | null = null;
 
   private readonly MAX_ENEMIES = 24;
   private readonly SPAWN_INTERVAL = 3;
@@ -84,8 +90,12 @@ export class EnemyManager {
   private readonly ENEMY_HALF_SIZE = new THREE.Vector3(0.4, 0.9, 0.4);
   private readonly BLAST_RADIUS = 4;
   private readonly DETECTION_RANGE = 22;
+  private readonly ATTACK_RANGE = 1.8;
+  private readonly ATTACK_COOLDOWN = 4;
+  private readonly FLASH_DURATION = 1.0;
 
   // Pre-allocated scratch objects to avoid per-frame allocation
+  private readonly _toHome = new THREE.Vector3();
   private readonly _toPlayer = new THREE.Vector3();
   private readonly _velocity = new THREE.Vector3();
   private readonly _enemyBox = new THREE.Box3();
@@ -119,6 +129,10 @@ export class EnemyManager {
     this.onKillCallback = callback;
   }
 
+  public setOnPlayerDamage(callback: (type: EnemyType) => void): void {
+    this.onPlayerDamageCallback = callback;
+  }
+
   private spawnEnemy(): void {
     if (this.enemies.length >= this.MAX_ENEMIES) return;
     if (this.spawnZones.length === 0) return;
@@ -144,6 +158,11 @@ export class EnemyManager {
       state: 'patrol',
       deathTimer: 0,
       type,
+      homePosition: spawnPos.clone(),
+      attackCooldown: 0,
+      stolenAmount: 0,
+      hasChart: false,
+      chartMesh: null,
     });
   }
 
@@ -567,13 +586,34 @@ export class EnemyManager {
     for (let i = this.enemies.length - 1; i >= 0; i--) {
       const enemy = this.enemies[i];
 
+      // Tick attack cooldown
+      if (enemy.attackCooldown > 0) {
+        enemy.attackCooldown -= deltaTime;
+      }
+
       if (enemy.state === 'patrol') {
         this._toPlayer.copy(this.playerPosition).sub(enemy.position);
         this._toPlayer.y = 0;
         const distToPlayer = this._toPlayer.length();
 
+        // Check if financeGoblin/hrEnforcer should attack
+        if (distToPlayer <= this.ATTACK_RANGE && enemy.attackCooldown <= 0) {
+          if (enemy.type === 'financeGoblin') {
+            enemy.state = 'stealing';
+            enemy.deathTimer = 0; // reuse as flash timer
+            this.onPlayerDamageCallback?.(enemy.type);
+            this.flashEnemy(enemy, 0x00ff00);
+            continue;
+          } else if (enemy.type === 'hrEnforcer') {
+            enemy.state = 'reviewing';
+            enemy.deathTimer = 0;
+            this.onPlayerDamageCallback?.(enemy.type);
+            this.flashEnemy(enemy, 0x9900ff);
+            continue;
+          }
+        }
+
         if (distToPlayer > 1.2) {
-          // _toPlayer is now the direction (normalized in-place)
           this._toPlayer.normalize();
 
           if (distToPlayer > this.DETECTION_RANGE) {
@@ -585,7 +625,6 @@ export class EnemyManager {
           const moveSpeed = enemy.speed * deltaTime;
           this._velocity.copy(this._toPlayer).multiplyScalar(moveSpeed);
 
-          // Save the direction before moveWithCollision may overwrite _testPos
           const dirX = this._toPlayer.x;
           const dirZ = this._toPlayer.z;
 
@@ -593,11 +632,49 @@ export class EnemyManager {
           enemy.position.copy(newPos);
           enemy.mesh.position.copy(enemy.position);
 
-          // Face movement direction (use saved direction since _toPlayer may be reused)
           enemy.mesh.rotation.y = Math.atan2(dirX, dirZ);
         }
 
-        // Walk bob — use elapsed time instead of Date.now()
+        // Walk bob
+        enemy.mesh.position.y = Math.abs(Math.sin(time * 6 * enemy.speed)) * 0.06;
+
+      } else if (enemy.state === 'stealing') {
+        // Flash green for FLASH_DURATION then retreat
+        enemy.deathTimer += deltaTime;
+        if (enemy.deathTimer >= this.FLASH_DURATION) {
+          enemy.state = 'retreating';
+          enemy.attackCooldown = this.ATTACK_COOLDOWN;
+        }
+
+      } else if (enemy.state === 'reviewing') {
+        // Flash purple for FLASH_DURATION then resume patrol
+        enemy.deathTimer += deltaTime;
+        if (enemy.deathTimer >= this.FLASH_DURATION) {
+          enemy.state = 'retreating';
+          enemy.attackCooldown = this.ATTACK_COOLDOWN;
+        }
+
+      } else if (enemy.state === 'retreating') {
+        // Move back toward home position
+        this._toHome.copy(enemy.homePosition).sub(enemy.position);
+        this._toHome.y = 0;
+        const distHome = this._toHome.length();
+
+        if (distHome > 2) {
+          this._toHome.normalize();
+          const moveSpeed = enemy.speed * 1.3 * deltaTime;
+          this._velocity.copy(this._toHome).multiplyScalar(moveSpeed);
+          const dirX = this._toHome.x;
+          const dirZ = this._toHome.z;
+          const newPos = this.moveWithCollision(enemy.position, this._velocity);
+          enemy.position.copy(newPos);
+          enemy.mesh.position.copy(enemy.position);
+          enemy.mesh.rotation.y = Math.atan2(dirX, dirZ);
+        } else {
+          enemy.state = 'patrol';
+        }
+
+        // Walk bob
         enemy.mesh.position.y = Math.abs(Math.sin(time * 6 * enemy.speed)) * 0.06;
 
       } else if (enemy.state === 'dying') {
@@ -610,6 +687,10 @@ export class EnemyManager {
 
         if (enemy.deathTimer >= 0.5) {
           this.scene.remove(enemy.mesh);
+          if (enemy.chartMesh) {
+            this.scene.remove(enemy.chartMesh);
+            disposeGroup(enemy.chartMesh);
+          }
           disposeGroup(enemy.mesh);
           this.enemies.splice(i, 1);
         }
@@ -641,9 +722,13 @@ export class EnemyManager {
 
   // ─── Hit detection ─────────────────────────────────────────────────
 
+  private isAlive(enemy: Enemy): boolean {
+    return enemy.state !== 'dying';
+  }
+
   public checkProjectileHit(position: THREE.Vector3): boolean {
     for (const enemy of this.enemies) {
-      if (enemy.state !== 'patrol') continue;
+      if (!this.isAlive(enemy)) continue;
       const dist = position.distanceTo(enemy.position.clone().setY(position.y));
       if (dist < this.ENEMY_RADIUS + 0.3) {
         this.damageEnemy(enemy, 1);
@@ -656,7 +741,7 @@ export class EnemyManager {
   public checkExplosionHits(position: THREE.Vector3): number {
     let kills = 0;
     for (const enemy of this.enemies) {
-      if (enemy.state !== 'patrol') continue;
+      if (!this.isAlive(enemy)) continue;
       const dist = position.distanceTo(enemy.position);
       if (dist < this.BLAST_RADIUS) {
         const wasDying = enemy.health <= 1;
@@ -697,6 +782,13 @@ export class EnemyManager {
     enemy.state = 'dying';
     enemy.deathTimer = 0;
     this.killCount++;
+
+    // Remove chart if present
+    if (enemy.chartMesh) {
+      enemy.mesh.remove(enemy.chartMesh);
+      disposeGroup(enemy.chartMesh);
+      enemy.chartMesh = null;
+    }
 
     this.spawnDeathParticles(enemy.position.clone(), enemy.type);
 
@@ -788,6 +880,58 @@ export class EnemyManager {
       this.scene.remove(flash);
       flash.dispose();
     }, 120);
+  }
+
+  // ─── Flash + QBR ─────────────────────────────────────────────────
+
+  private static readonly GREEN_FLASH_MAT = new THREE.MeshStandardMaterial({ color: 0x00ff00, emissive: 0x00ff00, emissiveIntensity: 0.5 });
+  private static readonly PURPLE_FLASH_MAT = new THREE.MeshStandardMaterial({ color: 0x9900ff, emissive: 0x9900ff, emissiveIntensity: 0.5 });
+
+  private flashEnemy(enemy: Enemy, color: number): void {
+    const flashMat = color === 0x00ff00 ? EnemyManager.GREEN_FLASH_MAT : EnemyManager.PURPLE_FLASH_MAT;
+    const originals: { mesh: THREE.Mesh; material: THREE.Material }[] = [];
+    enemy.mesh.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        originals.push({ mesh: child, material: child.material as THREE.Material });
+        child.material = flashMat;
+      }
+    });
+    setTimeout(() => {
+      for (const entry of originals) {
+        entry.mesh.material = entry.material;
+      }
+    }, this.FLASH_DURATION * 1000);
+  }
+
+  /** Give enemies tiny bar charts above their heads when QBR passes through */
+  public applyQBRWave(planeZ: number): void {
+    for (const enemy of this.enemies) {
+      if (enemy.state === 'dying' || enemy.hasChart) continue;
+      // Check if QBR plane has passed this enemy's Z position
+      if (Math.abs(enemy.position.z - planeZ) < 2) {
+        enemy.hasChart = true;
+        const chart = this.buildMiniChart();
+        chart.position.set(0, 2.0, 0);
+        enemy.mesh.add(chart);
+        enemy.chartMesh = chart;
+      }
+    }
+  }
+
+  private buildMiniChart(): THREE.Group {
+    const g = new THREE.Group();
+    // 4 tiny colored bars
+    const colors = [0xff4444, 0xffaa00, 0x44ff44, 0x4444ff];
+    const heights = [0.15, 0.25, 0.1, 0.3];
+    for (let i = 0; i < 4; i++) {
+      const bar = new THREE.Mesh(
+        new THREE.BoxGeometry(0.04, heights[i], 0.02),
+        mat(colors[i])
+      );
+      bar.position.set(-0.06 + i * 0.04, heights[i] / 2, 0);
+      g.add(bar);
+    }
+    return g;
   }
 
   // ─── Public getters ────────────────────────────────────────────────

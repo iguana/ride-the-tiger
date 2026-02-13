@@ -7,8 +7,10 @@ import { CallCenter } from './environment/CallCenter';
 import { MissionManager } from './systems/MissionManager';
 import { SimplePhysics } from './systems/Physics';
 import { PhoneShooter } from './systems/PhoneShooter';
+import { BudgetManager } from './systems/BudgetManager';
 import { HUD } from './ui/HUD';
 import { AudioManager } from './systems/AudioManager';
+import { AICompanion } from './entities/AICompanion';
 import { getLevelByIndex, getLevel, type LevelDefinition } from './levels';
 
 export class Game {
@@ -20,29 +22,52 @@ export class Game {
   private missionManager: MissionManager;
   private physics: SimplePhysics;
   private phoneShooter: PhoneShooter;
+  private budgetManager: BudgetManager;
   private hud: HUD;
   private audio: AudioManager;
+  private companion: AICompanion;
   private level: LevelDefinition;
 
   private clock: THREE.Clock;
   private elapsedTime: number = 0;
   private isRunning: boolean = false;
+  private gameOver: boolean = false;
   private footstepTimer: number = 0;
 
   // Pre-allocated scratch vectors to avoid per-frame allocation
   private readonly _prevPos = new THREE.Vector3();
   private readonly _movement = new THREE.Vector3();
   private readonly _warpDelta = new THREE.Vector3();
+  private readonly _financeDelta = new THREE.Vector3();
 
   private warpDoors: { position: THREE.Vector3; targetLevelId: string }[] = [];
   private warpCooldown: number = 0;
 
+  // QBR system
+  private qbrTimer: number = 0;
+  private readonly QBR_INTERVAL = 60;
+  private readonly QBR_WARNING_TIME = 5;
+  private readonly QBR_SPEED = 5;
+  private qbrActive: boolean = false;
+  private qbrPlane: THREE.Mesh | null = null;
+  private qbrPlaneZ: number = 0;
+  private qbrStartZ: number = -130;
+  private qbrEndZ: number = 160;
+  private qbrWarningShown: boolean = false;
+  private qbrHitPlayer: boolean = false;
+
+  // Finance recharge zone
+  private readonly FINANCE_POSITION = new THREE.Vector3(25, 0, 50);
+  private readonly FINANCE_RECHARGE_RANGE = 5;
+
   private startScreen: HTMLElement;
   private container: HTMLElement;
+  private gameOverElement: HTMLElement;
 
   constructor() {
     this.container = document.getElementById('game-container')!;
     this.startScreen = document.getElementById('start-screen')!;
+    this.gameOverElement = document.getElementById('game-over')!;
 
     // Initialize core systems
     this.scene = new GameScene(this.container);
@@ -59,8 +84,11 @@ export class Game {
     this.phoneShooter = new PhoneShooter(this.scene.scene);
     this.enemyManager = new EnemyManager(this.scene.scene);
     this.missionManager = new MissionManager();
+    this.budgetManager = new BudgetManager();
     this.hud = new HUD();
     this.audio = new AudioManager();
+    this.companion = new AICompanion();
+    this.companion.attach(this.tiger.mesh);
 
     // Connect enemy manager to phone shooter
     this.phoneShooter.setEnemyManager(this.enemyManager);
@@ -70,6 +98,36 @@ export class Game {
     this.enemyManager.setOnKill((count) => {
       this.hud.updateKillCount(count);
       this.audio.playEnemyDeath();
+      if (count % 5 === 0) {
+        this.budgetManager.resetReview();
+      }
+    });
+
+    // Wire enemy damage -> budget manager
+    this.enemyManager.setOnPlayerDamage((type) => {
+      if (this.gameOver) return;
+      if (type === 'financeGoblin') {
+        this.budgetManager.stealBudget();
+        this.audio.playBudgetSteal();
+      } else if (type === 'hrEnforcer') {
+        this.budgetManager.escalateReview();
+        this.audio.playReview();
+      }
+    });
+
+    // Wire budget manager callbacks -> HUD
+    this.budgetManager.setOnExpense((amount, attack) => {
+      this.hud.showAttackCard(attack, 'finance', amount);
+    });
+    this.budgetManager.setOnBudgetChange((budget) => {
+      this.hud.updateBudget(budget);
+    });
+    this.budgetManager.setOnReviewChange((level, attack) => {
+      this.hud.updateReview(level);
+      this.hud.showAttackCard(attack, 'hr');
+    });
+    this.budgetManager.setOnFired((reason) => {
+      this.triggerGameOver(reason);
     });
 
     this.setup();
@@ -112,6 +170,17 @@ export class Game {
       const progress = this.missionManager.getProgress();
       this.hud.updateProgress(progress.completed, progress.total);
 
+      // Visiting People (HR) resets review status
+      if (mission.id === 'people') {
+        this.budgetManager.resetReview();
+      }
+
+      // Unlock AI companion after 2 objectives
+      if (progress.completed === 2 && !this.companion.mesh.visible) {
+        this.companion.setVisible(true);
+        this.hud.showUnlockNotification('THE AI HAS JOINED YOU');
+      }
+
       // Auto-advance to next mission after delay
       setTimeout(() => {
         if (this.missionManager.advanceToNext()) {
@@ -132,8 +201,15 @@ export class Game {
 
     // Setup shooting on click
     document.addEventListener('mousedown', (e) => {
-      if (e.button === 0 && this.isRunning && this.camera.locked) {
+      if (e.button === 0 && this.isRunning && this.camera.locked && !this.gameOver) {
         this.shoot();
+      }
+    });
+
+    // Game over click-to-restart
+    this.gameOverElement.addEventListener('click', () => {
+      if (this.gameOver) {
+        this.restart();
       }
     });
 
@@ -187,13 +263,73 @@ export class Game {
     // Game continues running, player can press ESC to pause
   }
 
+  private triggerGameOver(reason: string): void {
+    if (this.gameOver) return;
+    this.gameOver = true;
+    this.audio.playFired();
+    this.hud.showGameOver(reason);
+    document.exitPointerLock();
+  }
+
+  private restart(): void {
+    this.gameOver = false;
+    this.hud.hideGameOver();
+    this.hud.resetBudgetHUD();
+    this.budgetManager.reset();
+
+    // Clean up QBR plane if active
+    if (this.qbrPlane) {
+      this.scene.scene.remove(this.qbrPlane);
+      (this.qbrPlane.material as THREE.Material).dispose();
+      this.qbrPlane.geometry.dispose();
+      this.qbrPlane = null;
+    }
+    this.qbrActive = false;
+    this.qbrTimer = 0;
+    this.qbrWarningShown = false;
+    this.qbrHitPlayer = false;
+
+    // Teardown and rebuild level
+    this.scene.scene.remove(this.callCenter.group);
+    this.enemyManager.clear();
+    this.phoneShooter.clear();
+
+    this.callCenter = new CallCenter(this.level);
+    this.scene.add(this.callCenter.group);
+
+    const colliders = this.callCenter.getColliders();
+    this.physics.setColliders(colliders);
+    this.phoneShooter.setColliders(colliders);
+    this.enemyManager.setColliders(colliders);
+
+    this.enemyManager.setSpawnZones(this.level.spawnZones);
+    const departments = this.callCenter.getDepartments();
+    this.missionManager.loadDepartments(departments);
+
+    const activeMission = this.missionManager.getActiveMission();
+    this.hud.updateObjective(activeMission);
+    const progress = this.missionManager.getProgress();
+    this.hud.updateProgress(progress.completed, progress.total);
+    this.hud.updateKillCount(0);
+
+    this.tiger.setPosition(...this.level.playerSpawn);
+    this.warpDoors = this.callCenter.getWarpDoors();
+    this.warpCooldown = 1.0;
+    this.elapsedTime = 0;
+
+    // Reset companion
+    this.companion.setVisible(false);
+
+    this.container.requestPointerLock();
+  }
+
   private animate = (): void => {
     requestAnimationFrame(this.animate);
 
     const deltaTime = Math.min(this.clock.getDelta(), 0.1);
     this.elapsedTime += deltaTime;
 
-    if (this.isRunning && this.camera.locked) {
+    if (this.isRunning && this.camera.locked && !this.gameOver) {
       this.update(deltaTime);
     }
 
@@ -247,6 +383,18 @@ export class Game {
     // Update enemies
     this.enemyManager.update(deltaTime, this.tiger.getPosition());
 
+    // Update budget cooldowns
+    this.budgetManager.updateCooldown(deltaTime);
+
+    // Update AI companion animations
+    this.companion.update(deltaTime);
+
+    // Finance recharge zone
+    this.updateFinanceRecharge(deltaTime);
+
+    // QBR system
+    this.updateQBR(deltaTime);
+
     // Check warp door proximity
     if (this.warpCooldown > 0) {
       this.warpCooldown -= deltaTime;
@@ -263,6 +411,106 @@ export class Game {
     }
   }
 
+  private updateFinanceRecharge(deltaTime: number): void {
+    const playerPos = this.tiger.getPosition();
+    this._financeDelta.copy(playerPos).sub(this.FINANCE_POSITION);
+    this._financeDelta.y = 0;
+    const dist = this._financeDelta.length();
+
+    if (dist < this.FINANCE_RECHARGE_RANGE) {
+      const cooldown = this.budgetManager.getRechargeCooldown();
+      if (cooldown <= 0) {
+        if (this.budgetManager.tryRecharge(deltaTime)) {
+          this.audio.playRecharge();
+          this.hud.showRechargeIndicator(true);
+          // Hide after brief display
+          setTimeout(() => {
+            this.hud.showRechargeIndicator(false);
+          }, 2000);
+        }
+      } else {
+        this.hud.showRechargeIndicator(true, cooldown);
+      }
+    } else {
+      this.hud.showRechargeIndicator(false);
+    }
+  }
+
+  private updateQBR(deltaTime: number): void {
+    if (this.qbrActive) {
+      // Move QBR plane slowly across the level
+      this.qbrPlaneZ += this.QBR_SPEED * deltaTime;
+
+      if (this.qbrPlane) {
+        this.qbrPlane.position.z = this.qbrPlaneZ;
+      }
+
+      // Apply charts to enemies as wave passes
+      this.enemyManager.applyQBRWave(this.qbrPlaneZ);
+
+      // Check if wave reaches player
+      const playerZ = this.tiger.getPosition().z;
+      if (!this.qbrHitPlayer && this.qbrPlaneZ >= playerZ) {
+        this.qbrHitPlayer = true;
+        this.audio.playQBR();
+        this.budgetManager.checkQBR();
+      }
+
+      // End QBR when plane exits level
+      if (this.qbrPlaneZ > this.qbrEndZ) {
+        this.endQBR();
+      }
+    } else {
+      this.qbrTimer += deltaTime;
+
+      // Warning phase
+      if (this.qbrTimer >= this.QBR_INTERVAL - this.QBR_WARNING_TIME && !this.qbrWarningShown) {
+        this.qbrWarningShown = true;
+        this.hud.showQBRWarning(true);
+        this.audio.playQBRStart();
+      }
+
+      // Start QBR
+      if (this.qbrTimer >= this.QBR_INTERVAL) {
+        this.startQBR();
+      }
+    }
+  }
+
+  private startQBR(): void {
+    this.qbrActive = true;
+    this.qbrTimer = 0;
+    this.qbrWarningShown = false;
+    this.qbrHitPlayer = false;
+    this.qbrPlaneZ = this.qbrStartZ;
+    this.hud.showQBRWarning(false);
+
+    // Create translucent golden plane
+    const geometry = new THREE.PlaneGeometry(300, 20);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffd700,
+      emissive: 0xffd700,
+      emissiveIntensity: 0.3,
+      transparent: true,
+      opacity: 0.15,
+      side: THREE.DoubleSide,
+    });
+    this.qbrPlane = new THREE.Mesh(geometry, material);
+    this.qbrPlane.position.set(0, 5, this.qbrStartZ);
+    this.qbrPlane.rotation.y = Math.PI / 2;
+    this.scene.scene.add(this.qbrPlane);
+  }
+
+  private endQBR(): void {
+    this.qbrActive = false;
+    if (this.qbrPlane) {
+      this.scene.scene.remove(this.qbrPlane);
+      (this.qbrPlane.material as THREE.Material).dispose();
+      this.qbrPlane.geometry.dispose();
+      this.qbrPlane = null;
+    }
+  }
+
   private loadLevel(levelId: string): void {
     const newLevel = getLevel(levelId);
     if (!newLevel) return;
@@ -271,6 +519,11 @@ export class Game {
     this.scene.scene.remove(this.callCenter.group);
     this.enemyManager.clear();
     this.phoneShooter.clear();
+
+    // Clean up QBR
+    this.endQBR();
+    this.qbrTimer = 0;
+    this.qbrWarningShown = false;
 
     // Build new level
     this.level = newLevel;

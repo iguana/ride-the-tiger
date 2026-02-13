@@ -328,6 +328,225 @@ export class AudioManager {
     osc.stop(now + 0.08);
   }
 
+  /** Budget stolen — descending coin pings (loss sound) */
+  public playBudgetSteal(): void {
+    if (!this.ctx || !this.canPlay('budgetSteal')) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+
+    // Descending coin pings
+    const notes = [1800, 1400, 1000, 700];
+    notes.forEach((freq, i) => {
+      const delay = i * 0.08;
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.12, now + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.1);
+      osc.connect(gain).connect(this.sfxGain);
+      osc.start(now + delay);
+      osc.stop(now + delay + 0.12);
+    });
+
+    // Low thud for loss
+    const thud = ctx.createOscillator();
+    thud.type = 'sine';
+    thud.frequency.setValueAtTime(120, now + 0.2);
+    thud.frequency.exponentialRampToValueAtTime(50, now + 0.4);
+    const thudGain = ctx.createGain();
+    thudGain.gain.setValueAtTime(0.2, now + 0.2);
+    thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+    thud.connect(thudGain).connect(this.sfxGain);
+    thud.start(now + 0.2);
+    thud.stop(now + 0.45);
+  }
+
+  /** Performance review — authoritative stamp/slap */
+  public playReview(): void {
+    if (!this.ctx || !this.canPlay('review')) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+
+    // Sharp impact noise
+    const noiseBuffer = this.createNoiseBuffer(0.08, (t) => (1 - t * t) * 0.6);
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.value = 1500;
+    filter.Q.value = 3;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.4, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    noise.connect(filter).connect(gain).connect(this.sfxGain);
+    noise.start(now);
+    noise.stop(now + 0.1);
+
+    // Stamp resonance
+    const osc = ctx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(200, now);
+    osc.frequency.exponentialRampToValueAtTime(80, now + 0.15);
+    const oscGain = ctx.createGain();
+    oscGain.gain.setValueAtTime(0.15, now);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+    osc.connect(oscGain).connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + 0.2);
+  }
+
+  /** QBR wave hits player — deep whoosh sweep */
+  public playQBR(): void {
+    if (!this.ctx || !this.canPlay('qbr')) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+
+    // Sweeping noise
+    const noiseBuffer = this.createNoiseBuffer(0.6, (t) => {
+      const env = Math.sin(t * Math.PI);
+      return env * 0.4;
+    });
+    const noise = ctx.createBufferSource();
+    noise.buffer = noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(200, now);
+    filter.frequency.exponentialRampToValueAtTime(3000, now + 0.3);
+    filter.frequency.exponentialRampToValueAtTime(200, now + 0.6);
+    filter.Q.value = 1.5;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.3, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+    noise.connect(filter).connect(gain).connect(this.sfxGain);
+    noise.start(now);
+    noise.stop(now + 0.6);
+
+    // Deep bass sweep
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(60, now);
+    osc.frequency.exponentialRampToValueAtTime(120, now + 0.3);
+    osc.frequency.exponentialRampToValueAtTime(40, now + 0.6);
+    const oscGain = ctx.createGain();
+    oscGain.gain.setValueAtTime(0.25, now);
+    oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.6);
+    osc.connect(oscGain).connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + 0.6);
+  }
+
+  /** QBR approaching — ominous low drone warning */
+  public playQBRStart(): void {
+    if (!this.ctx || !this.canPlay('qbrStart')) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+
+    // Low ominous drone
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(55, now);
+    osc.frequency.linearRampToValueAtTime(65, now + 1.5);
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 300;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.15, now + 0.5);
+    gain.gain.linearRampToValueAtTime(0.15, now + 1.0);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 1.5);
+    osc.connect(filter).connect(gain).connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + 1.5);
+
+    // Warning pings
+    for (let i = 0; i < 3; i++) {
+      const ping = ctx.createOscillator();
+      ping.type = 'sine';
+      ping.frequency.value = 880;
+      const pingGain = ctx.createGain();
+      const t = now + 0.3 + i * 0.4;
+      pingGain.gain.setValueAtTime(0.1, t);
+      pingGain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+      ping.connect(pingGain).connect(this.sfxGain);
+      ping.start(t);
+      ping.stop(t + 0.15);
+    }
+  }
+
+  /** Finance recharge — ascending sparkle cha-ching */
+  public playRecharge(): void {
+    if (!this.ctx || !this.canPlay('recharge')) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+
+    // Ascending sparkle
+    const notes = [523, 659, 784, 1047, 1319];
+    notes.forEach((freq, i) => {
+      const delay = i * 0.06;
+      const osc = ctx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.15, now + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.2);
+      osc.connect(gain).connect(this.sfxGain);
+      osc.start(now + delay);
+      osc.stop(now + delay + 0.22);
+    });
+
+    // Cash register "ching"
+    const ching = ctx.createOscillator();
+    ching.type = 'sine';
+    ching.frequency.value = 3500;
+    const chingGain = ctx.createGain();
+    chingGain.gain.setValueAtTime(0.12, now + 0.3);
+    chingGain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+    ching.connect(chingGain).connect(this.sfxGain);
+    ching.start(now + 0.3);
+    ching.stop(now + 0.5);
+  }
+
+  /** Fired — sad trombone "wah wah wah wahhh" */
+  public playFired(): void {
+    if (!this.ctx || !this.canPlay('fired')) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+
+    // Classic sad trombone descending notes
+    const notes = [
+      { freq: 311, start: 0, dur: 0.35 },     // Eb4
+      { freq: 293, start: 0.35, dur: 0.35 },   // D4
+      { freq: 277, start: 0.7, dur: 0.35 },    // Db4
+      { freq: 261, start: 1.05, dur: 0.8 },    // C4 (long final)
+    ];
+
+    notes.forEach((note) => {
+      const osc = ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(note.freq, now + note.start);
+      // Slight vibrato on last note
+      if (note.dur > 0.5) {
+        osc.frequency.setValueAtTime(note.freq, now + note.start);
+        // Manual wobble with small detune steps
+        for (let w = 0; w < 8; w++) {
+          const t = now + note.start + 0.1 + w * 0.08;
+          osc.frequency.setValueAtTime(note.freq + (w % 2 === 0 ? 3 : -3), t);
+        }
+      }
+      const filter = ctx.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.frequency.value = 800;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.15, now + note.start);
+      gain.gain.setValueAtTime(0.15, now + note.start + note.dur * 0.7);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + note.start + note.dur);
+      osc.connect(filter).connect(gain).connect(this.sfxGain);
+      osc.start(now + note.start);
+      osc.stop(now + note.start + note.dur + 0.05);
+    });
+  }
+
   // ── Volume controls ───────────────────────────────────────
 
   public setMusicVolume(v: number): void {

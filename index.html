@@ -38,38 +38,180 @@
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         z-index: 1000;
         cursor: pointer;
+        overflow: hidden;
+      }
+      /* Scanline overlay */
+      #start-screen::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 200%;
+        background: repeating-linear-gradient(
+          0deg,
+          transparent,
+          transparent 2px,
+          rgba(0, 0, 0, 0.15) 2px,
+          rgba(0, 0, 0, 0.15) 4px
+        );
+        animation: scanlines 8s linear infinite;
+        pointer-events: none;
+        z-index: 1;
+      }
+      /* Floating particles */
+      #start-screen::after {
+        content: '▪ ▫ ▪ ▫ ▪';
+        position: absolute;
+        bottom: -20px;
+        left: 15%;
+        font-size: 1.5rem;
+        color: rgba(255, 107, 53, 0.25);
+        letter-spacing: 6vw;
+        animation: floatUp 12s linear infinite;
+        pointer-events: none;
+        z-index: 1;
+      }
+      .start-particles {
+        position: absolute;
+        bottom: -20px;
+        font-size: 1.2rem;
+        color: rgba(255, 107, 53, 0.15);
+        letter-spacing: 5vw;
+        pointer-events: none;
+        z-index: 1;
+      }
+      .start-particles:nth-child(1) {
+        left: 5%;
+        animation: floatUp 18s 2s linear infinite;
+      }
+      .start-particles:nth-child(2) {
+        left: 35%;
+        animation: floatUp 15s 5s linear infinite;
+      }
+      #start-screen > *:not(.start-particles) {
+        position: relative;
+        z-index: 2;
       }
       #start-screen h1 {
-        font-size: 4rem;
-        margin-bottom: 1rem;
-        text-shadow: 0 0 20px #ff6b35, 0 0 40px #ff6b35;
+        font-size: 5rem;
+        margin-bottom: 0.5rem;
         color: #ff6b35;
+        letter-spacing: 0.3em;
+        -webkit-text-stroke: 1px rgba(255, 165, 0, 0.3);
+        text-shadow:
+          0 0 10px #ff6b35,
+          0 0 30px #ff6b35,
+          0 0 60px rgba(255, 107, 53, 0.5),
+          0 0 100px rgba(255, 107, 53, 0.3);
+        animation: titleGlow 3s ease-in-out infinite;
       }
-      #start-screen p {
-        font-size: 1.5rem;
-        opacity: 0.8;
+      .hero-emoji {
+        font-size: 6rem;
+        display: block;
+        margin-bottom: 0.8rem;
+        position: relative;
+        line-height: 1;
+        filter: drop-shadow(0 0 8px rgba(255, 107, 53, 0.6));
+        animation: heroPulse 2.5s ease-in-out infinite;
+      }
+      #start-screen .tagline {
+        font-size: 1.1rem;
+        text-transform: uppercase;
+        letter-spacing: 0.4em;
+        opacity: 0.5;
         margin-bottom: 2rem;
+        font-weight: 300;
       }
       #start-screen .instructions {
-        font-size: 1rem;
-        opacity: 0.6;
-        text-align: center;
-        line-height: 1.8;
+        background: rgba(0, 0, 0, 0.5);
+        border: 1px solid rgba(74, 222, 128, 0.3);
+        border-radius: 6px;
+        padding: 16px 28px;
+        font-family: 'Courier New', Consolas, monospace;
+        font-size: 0.85rem;
+        color: rgba(74, 222, 128, 0.9);
+        text-align: left;
+        line-height: 1.6;
+        box-shadow: 0 0 15px rgba(74, 222, 128, 0.08), inset 0 0 30px rgba(0, 0, 0, 0.3);
+      }
+      .instructions .controls-title {
+        color: rgba(74, 222, 128, 0.5);
+        font-size: 0.7rem;
+        text-transform: uppercase;
+        letter-spacing: 0.2em;
+        margin-bottom: 8px;
+        display: block;
+      }
+      .instructions table {
+        border-collapse: collapse;
+      }
+      .instructions td {
+        padding: 2px 0;
+      }
+      .instructions td:first-child {
+        color: #fff;
+        padding-right: 16px;
+        font-weight: bold;
+        white-space: nowrap;
+      }
+      .instructions td:last-child {
+        opacity: 0.7;
       }
       #start-screen .click-prompt {
         margin-top: 2rem;
-        font-size: 1.2rem;
-        animation: pulse 2s infinite;
+        font-size: 1.5rem;
+        font-weight: bold;
+        letter-spacing: 0.15em;
+        color: #ff6b35;
+        animation: startPulse 2s ease-in-out infinite;
       }
-      #start-screen .hero-image {
-        max-width: 400px;
-        max-height: 300px;
-        width: 80%;
-        height: auto;
-        object-fit: contain;
-        margin-bottom: 1.5rem;
-        border-radius: 12px;
-        box-shadow: 0 0 40px rgba(255, 107, 53, 0.4);
+      .start-footer {
+        position: absolute;
+        bottom: 20px;
+        left: 0;
+        right: 0;
+        display: flex;
+        justify-content: space-between;
+        padding: 0 30px;
+        font-size: 0.7rem;
+        opacity: 0.3;
+        font-family: 'Courier New', Consolas, monospace;
+        letter-spacing: 0.1em;
+      }
+      @keyframes titleGlow {
+        0%, 100% {
+          text-shadow:
+            0 0 10px #ff6b35,
+            0 0 30px #ff6b35,
+            0 0 60px rgba(255, 107, 53, 0.5),
+            0 0 100px rgba(255, 107, 53, 0.3);
+        }
+        50% {
+          text-shadow:
+            0 0 15px #ffa500,
+            0 0 40px #ffd700,
+            0 0 80px rgba(255, 215, 0, 0.5),
+            0 0 120px rgba(255, 165, 0, 0.3);
+        }
+      }
+      @keyframes scanlines {
+        0% { transform: translateY(0); }
+        100% { transform: translateY(-50%); }
+      }
+      @keyframes floatUp {
+        0% { transform: translateY(0); opacity: 0; }
+        10% { opacity: 1; }
+        90% { opacity: 1; }
+        100% { transform: translateY(-100vh); opacity: 0; }
+      }
+      @keyframes heroPulse {
+        0%, 100% { filter: drop-shadow(0 0 8px rgba(255, 107, 53, 0.6)); transform: scale(1); }
+        50% { filter: drop-shadow(0 0 25px rgba(255, 107, 53, 0.9)) drop-shadow(0 0 50px rgba(255, 165, 0, 0.4)); transform: scale(1.05); }
+      }
+      @keyframes startPulse {
+        0%, 100% { opacity: 0.5; transform: scale(1); }
+        50% { opacity: 1; transform: scale(1.06); }
       }
       @keyframes pulse {
         0%, 100% { opacity: 0.5; }
@@ -178,23 +320,258 @@
       #mission-complete p {
         opacity: 0.8;
       }
+      #budget-display {
+        position: absolute;
+        top: 120px;
+        right: 20px;
+        background: rgba(0, 0, 0, 0.7);
+        color: #4ade80;
+        padding: 10px 18px;
+        border-radius: 8px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-size: 1rem;
+        font-weight: bold;
+        border-left: 4px solid #4ade80;
+        transition: transform 0.15s ease-out, color 0.3s;
+      }
+      #budget-display.negative {
+        color: #ff4444;
+        border-left-color: #ff4444;
+      }
+      #budget-display.pulse {
+        transform: scale(1.15);
+      }
+      #review-display {
+        position: absolute;
+        top: 170px;
+        right: 20px;
+        background: rgba(0, 0, 0, 0.7);
+        color: #4ade80;
+        padding: 10px 18px;
+        border-radius: 8px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-size: 0.9rem;
+        font-weight: bold;
+        border-left: 4px solid #4ade80;
+      }
+      #expense-container {
+        position: fixed;
+        bottom: 80px;
+        right: 20px;
+        display: flex;
+        flex-direction: column-reverse;
+        gap: 8px;
+        pointer-events: none;
+        z-index: 101;
+      }
+      .expense-toast {
+        background: rgba(0, 0, 0, 0.85);
+        color: #ff6b6b;
+        padding: 10px 18px;
+        border-radius: 8px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-size: 0.9rem;
+        font-weight: bold;
+        border-left: 4px solid #ff6b6b;
+        animation: toastSlideIn 0.3s ease-out, toastFadeOut 0.5s 5s ease-in forwards;
+        white-space: nowrap;
+      }
+      @keyframes toastSlideIn {
+        from { transform: translateX(100px); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+      @keyframes toastFadeOut {
+        to { transform: translateX(50px); opacity: 0; }
+      }
+      #qbr-warning {
+        position: absolute;
+        top: 35%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        color: #ffd700;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-size: 2.5rem;
+        font-weight: bold;
+        text-shadow: 0 0 20px rgba(255, 215, 0, 0.6), 0 0 40px rgba(255, 215, 0, 0.3);
+        text-align: center;
+        display: none;
+        animation: qbrPulse 0.8s infinite;
+      }
+      @keyframes qbrPulse {
+        0%, 100% { opacity: 0.7; transform: translate(-50%, -50%) scale(1); }
+        50% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+      }
+      #recharge-indicator {
+        position: absolute;
+        bottom: 40px;
+        left: 50%;
+        transform: translateX(-50%);
+        background: rgba(0, 0, 0, 0.8);
+        color: #4ade80;
+        padding: 10px 24px;
+        border-radius: 8px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-size: 1rem;
+        font-weight: bold;
+        text-align: center;
+        display: none;
+        border: 2px solid #4ade80;
+      }
+      #game-over {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.92);
+        display: none;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        z-index: 2000;
+        cursor: pointer;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      }
+      #game-over h1 {
+        font-size: 5rem;
+        color: #ff4444;
+        text-shadow: 0 0 30px rgba(255, 68, 68, 0.5);
+        margin-bottom: 20px;
+      }
+      #game-over-reason {
+        font-size: 1.4rem;
+        color: #ff8888;
+        margin-bottom: 10px;
+      }
+      #game-over-subtitle {
+        font-size: 1.1rem;
+        color: #888;
+        margin-bottom: 40px;
+      }
+      #game-over .restart-prompt {
+        font-size: 1.2rem;
+        color: #aaa;
+        animation: pulse 2s infinite;
+      }
+
+      /* Attack Cards */
+      #attack-card-container {
+        position: fixed;
+        top: 50%;
+        right: 40px;
+        transform: translateY(-50%);
+        pointer-events: none;
+        z-index: 150;
+      }
+      .attack-card {
+        background: rgba(0, 0, 0, 0.92);
+        padding: 24px 32px;
+        border-radius: 14px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        text-align: center;
+        min-width: 280px;
+        max-width: 340px;
+        border: 2px solid;
+        animation: cardSlideIn 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards,
+                   cardSlideOut 0.4s 5s ease-in forwards;
+      }
+      .attack-card.finance {
+        border-color: #4ade80;
+        box-shadow: 0 0 30px rgba(74, 222, 128, 0.3), inset 0 0 20px rgba(74, 222, 128, 0.05);
+      }
+      .attack-card.hr {
+        border-color: #a855f7;
+        box-shadow: 0 0 30px rgba(168, 85, 247, 0.3), inset 0 0 20px rgba(168, 85, 247, 0.05);
+      }
+      .attack-card .card-emoji {
+        font-size: 3.5rem;
+        margin-bottom: 8px;
+        display: block;
+      }
+      .attack-card .card-name {
+        font-size: 1.15rem;
+        font-weight: bold;
+        color: #fff;
+        margin-bottom: 6px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+      }
+      .attack-card .card-desc {
+        font-size: 0.85rem;
+        color: #aaa;
+        font-style: italic;
+        margin-bottom: 12px;
+        line-height: 1.3;
+      }
+      .attack-card .card-penalty {
+        font-size: 1.3rem;
+        font-weight: bold;
+      }
+      .attack-card.finance .card-penalty {
+        color: #ff4444;
+      }
+      .attack-card.hr .card-penalty {
+        color: #a855f7;
+      }
+      @keyframes cardSlideIn {
+        from { transform: translateX(120px); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+      @keyframes cardSlideOut {
+        to { transform: translateX(100px); opacity: 0; }
+      }
+
+      /* Unlock Notification */
+      .unlock-notification {
+        position: fixed;
+        top: 25%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: rgba(0, 0, 0, 0.92);
+        color: #00d4ff;
+        padding: 24px 48px;
+        border-radius: 12px;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        font-size: 1.5rem;
+        font-weight: bold;
+        text-align: center;
+        border: 2px solid #00d4ff;
+        box-shadow: 0 0 40px rgba(0, 212, 255, 0.4);
+        z-index: 200;
+        pointer-events: none;
+        animation: unlockPulse 0.6s ease-out, toastFadeOut 0.5s 6s ease-in forwards;
+      }
+      @keyframes unlockPulse {
+        0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+        60% { transform: translate(-50%, -50%) scale(1.1); }
+        100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+      }
     </style>
   </head>
   <body>
     <div id="game-container"></div>
     <div id="start-screen">
+      <div class="start-particles">▪ ▫ ▪ ▫</div>
+      <div class="start-particles">▫ ▪ ▫ ▪ ▫</div>
+      <div class="hero-emoji">🐯</div>
       <h1>RIDE THE TIGER</h1>
-      <p>Navigate the corporate jungle</p>
+      <div class="tagline">NAVIGATE THE CORPORATE JUNGLE</div>
       <div class="instructions">
-        <strong>Controls:</strong><br>
-        WASD - Move<br>
-        Mouse - Look around<br>
-        Click - Throw phone<br>
-        Shift - Sprint<br>
-        M - Toggle music<br>
-        ESC - Release cursor
+        <span class="controls-title">// controls</span>
+        <table>
+          <tr><td>WASD</td><td>Move</td></tr>
+          <tr><td>Mouse</td><td>Look around</td></tr>
+          <tr><td>Click</td><td>Throw phone</td></tr>
+          <tr><td>Shift</td><td>Sprint</td></tr>
+          <tr><td>M</td><td>Toggle music</td></tr>
+          <tr><td>ESC</td><td>Release cursor</td></tr>
+        </table>
       </div>
-      <div class="click-prompt">Click anywhere to start</div>
+      <div class="click-prompt">[ CLICK TO START ]</div>
+      <div class="start-footer">
+        <span>v1.0</span>
+        <span>WASD + MOUSE</span>
+      </div>
     </div>
     <div id="hud">
       <div id="objective">
@@ -203,11 +580,23 @@
       </div>
       <div id="progress"></div>
       <div id="kill-count">Managers fired: 0</div>
+      <div id="budget-display">Budget: $10,000</div>
+      <div id="review-display">Review: Good</div>
       <div id="crosshair"></div>
       <div id="mission-complete">
         <h2>CHECKED IN!</h2>
         <p>Department visited!</p>
       </div>
+      <div id="qbr-warning">QBR APPROACHING</div>
+      <div id="recharge-indicator">Finance Dept: Budget Recharge Available</div>
+    </div>
+    <div id="expense-container"></div>
+    <div id="attack-card-container"></div>
+    <div id="game-over">
+      <h1>YOU'RE FIRED</h1>
+      <p id="game-over-reason">Budget deficit</p>
+      <p id="game-over-subtitle">Please return your badge and laptop to HR</p>
+      <div class="restart-prompt">Click to reapply</div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
