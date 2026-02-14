@@ -8,5 +8,7 @@ export default defineConfig({
   optimizeDeps: {},
   server: {
     allowedHosts: true,
+    strictPort: true,
   },
+  clearScreen: false,
 });

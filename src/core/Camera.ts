@@ -27,6 +27,7 @@ export class FirstPersonCamera {
 
   // Recoil system
   private recoilPitch: number = 0;
+  private recoilApplied: number = 0; // currently-applied offset to undo each frame
   private readonly RECOIL_KICK = 0.035; // radians (~2 degrees)
   private readonly RECOIL_RETURN_SPEED = 8;
 
@@ -155,11 +156,14 @@ export class FirstPersonCamera {
       this.shakeOffsetY = 0;
     }
 
-    // Handle recoil
+    // Handle recoil (offset-tracked, same pattern as shake)
     if (this.recoilPitch > 0.001) {
-      // Apply recoil (negative X = pitch up)
       this.euler.setFromQuaternion(this.camera.quaternion);
-      this.euler.x -= this.recoilPitch;
+
+      // Undo previous frame's offset, apply current decayed offset
+      this.euler.x += this.recoilApplied;
+      this.recoilApplied = this.recoilPitch;
+      this.euler.x -= this.recoilApplied;
 
       // Clamp vertical look to prevent over-rotation
       this.euler.x = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, this.euler.x));
@@ -169,6 +173,14 @@ export class FirstPersonCamera {
       // Exponential decay
       this.recoilPitch *= Math.exp(-this.RECOIL_RETURN_SPEED * deltaTime);
     } else {
+      // Remove any remaining applied recoil
+      if (this.recoilApplied !== 0) {
+        this.euler.setFromQuaternion(this.camera.quaternion);
+        this.euler.x += this.recoilApplied;
+        this.euler.x = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, this.euler.x));
+        this.camera.quaternion.setFromEuler(this.euler);
+        this.recoilApplied = 0;
+      }
       this.recoilPitch = 0;
     }
   }
