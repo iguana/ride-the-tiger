@@ -13,6 +13,14 @@ import { AudioManager } from './systems/AudioManager';
 import { AICompanion } from './entities/AICompanion';
 import { getLevelByIndex, getLevel, type LevelDefinition } from './levels';
 
+declare class OpenGameSDK {
+  constructor(config: { ui: { usePointsWidget: boolean; theme?: string }; logLevel?: string });
+  init(opts: { gameId: string }): Promise<void>;
+  addPoints(amount: number): void;
+  endGame(): Promise<void>;
+  on(event: string, callback: (...args: unknown[]) => void): void;
+}
+
 export class Game {
   private scene: GameScene;
   private camera: FirstPersonCamera;
@@ -85,6 +93,11 @@ export class Game {
   private readonly FINANCE_POSITION = new THREE.Vector3(25, 0, 50);
   private readonly FINANCE_RECHARGE_RANGE = 5;
 
+  // Play.fun SDK
+  private playfunSdk: OpenGameSDK | null = null;
+  private playfunReady: boolean = false;
+  private playfunPaused: boolean = false;
+
   private startScreen: HTMLElement;
   private container: HTMLElement;
   private gameOverElement: HTMLElement;
@@ -125,6 +138,12 @@ export class Game {
       this.audio.playEnemyDeath();
       this.budgetManager.addKillReward();
       this.budgetManager.applyKillMilestone(count);
+
+      // Play.fun: award points per kill (scaled by difficulty tier)
+      if (this.playfunSdk && this.playfunReady) {
+        const tier = this.enemyManager.getDifficultyTier();
+        this.playfunSdk.addPoints(10 * tier);
+      }
     });
 
     // Wire enemy damage -> budget manager + feedback
@@ -170,6 +189,30 @@ export class Game {
     });
 
     this.setup();
+    this.initPlayFunSDK();
+  }
+
+  private initPlayFunSDK(): void {
+    if (typeof OpenGameSDK === 'undefined') return;
+
+    this.playfunSdk = new OpenGameSDK({
+      ui: { usePointsWidget: true, theme: 'dark' },
+      logLevel: 'info',
+    });
+
+    this.playfunSdk.on('OnReady', () => {
+      this.playfunReady = true;
+    });
+
+    this.playfunSdk.on('GamePause', () => {
+      this.playfunPaused = true;
+    });
+
+    this.playfunSdk.on('GameResume', () => {
+      this.playfunPaused = false;
+    });
+
+    this.playfunSdk.init({ gameId: 'a276155e-eab2-419c-aac4-13b667459c60' });
   }
 
   private setup(): void {
@@ -315,6 +358,15 @@ export class Game {
     this.camera.applyShake(0.4);
     this.hud.showGameOver(reason);
     document.exitPointerLock();
+
+    // Play.fun: add budget bonus and submit final score
+    if (this.playfunSdk && this.playfunReady) {
+      const budget = this.budgetManager.getBudget();
+      if (budget > 0) {
+        this.playfunSdk.addPoints(Math.floor(budget / 100));
+      }
+      this.playfunSdk.endGame().catch(() => {});
+    }
   }
 
   private restart(): void {
@@ -387,7 +439,7 @@ export class Game {
     const deltaTime = Math.min(this.clock.getDelta(), 0.1);
     this.elapsedTime += deltaTime;
 
-    if (this.isRunning && this.camera.locked && !this.gameOver) {
+    if (this.isRunning && this.camera.locked && !this.gameOver && !this.playfunPaused) {
       this.update(deltaTime);
     }
 

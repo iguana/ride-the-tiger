@@ -1,14 +1,14 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  base: './',
+  base: process.env.BASE_URL || './',
   build: {
     target: 'esnext',
   },
   optimizeDeps: {},
   server: {
     allowedHosts: true,
-    strictPort: true,
+    strictPort: false,
   },
   clearScreen: false,
 });
