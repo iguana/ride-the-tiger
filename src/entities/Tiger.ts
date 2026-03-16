@@ -42,7 +42,7 @@ export class Tiger {
 
   private loadModel(): void {
     const loader = new GLTFLoader();
-    loader.load('/models/Tiger.glb', (gltf) => {
+    loader.load('models/Tiger.glb', (gltf) => {
       const model = gltf.scene;
 
       // Measure the model's bounding box to auto-scale

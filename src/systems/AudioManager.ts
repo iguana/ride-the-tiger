@@ -97,10 +97,10 @@ export class AudioManager {
   private async loadTrackList(): Promise<void> {
     try {
       // Try loading a manifest file first
-      const response = await fetch('/soundtrack/tracks.json');
+      const response = await fetch('soundtrack/tracks.json');
       if (response.ok) {
         const manifest = await response.json();
-        this.tracks = (manifest as string[]).map(f => `/soundtrack/${f}`);
+        this.tracks = (manifest as string[]).map(f => `soundtrack/${f}`);
       }
     } catch {
       // No manifest — that's fine, user can add one later
